@@ -172,6 +172,130 @@
         });
     };
 
+    const initSearchFilters = () => {
+        const form = document.querySelector('[data-search-filters]');
+
+        if (!form) {
+            return;
+        }
+
+        const toggle = form.querySelector('[data-filter-toggle]');
+        const panel = form.querySelector('[data-filter-panel]');
+
+        if (!toggle || !panel) {
+            return;
+        }
+
+        const closeFilters = (restoreFocus = false) => {
+            panel.hidden = true;
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.setAttribute('aria-label', 'Open search filters');
+
+            if (restoreFocus) {
+                toggle.focus();
+            }
+        };
+
+        const openFilters = () => {
+            panel.hidden = false;
+            toggle.setAttribute('aria-expanded', 'true');
+            toggle.setAttribute('aria-label', 'Close search filters');
+
+            const firstSelect = panel.querySelector('select');
+
+            if (firstSelect) {
+                firstSelect.focus();
+            }
+        };
+
+        toggle.addEventListener('click', () => {
+            if (panel.hidden) {
+                openFilters();
+            } else {
+                closeFilters(true);
+            }
+        });
+
+        document.addEventListener('pointerdown', (event) => {
+            if (!panel.hidden && event.target instanceof Node && !form.contains(event.target)) {
+                closeFilters();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !panel.hidden) {
+                event.preventDefault();
+                closeFilters(true);
+            }
+        });
+    };
+
+    const initRecordListLoading = () => {
+        const form = document.querySelector('[data-search-filters]');
+        const listRegion = document.querySelector('[data-list-region]');
+        const loadingState = document.querySelector('[data-list-loading]');
+
+        if (!form || !listRegion || !loadingState) {
+            return;
+        }
+
+        form.addEventListener('submit', () => {
+            loadingState.hidden = false;
+            listRegion.setAttribute('aria-busy', 'true');
+        });
+    };
+
+    const initDocumentForm = () => {
+        const form = document.querySelector('[data-document-form]');
+
+        if (!form) {
+            return;
+        }
+
+        const direction = form.querySelector('[data-direction-select]');
+        const partyLabel = form.querySelector('[data-party-label]');
+        const transactionLabel = form.querySelector('[data-transaction-label]');
+        const submitButton = form.querySelector('[data-document-submit]');
+        const submitLabel = form.querySelector('[data-submit-label]');
+
+        const updateDirectionLabels = () => {
+            if (!direction || !partyLabel || !transactionLabel) {
+                return;
+            }
+
+            if (direction.value === 'Incoming') {
+                partyLabel.firstChild.textContent = 'Received from / Sender ';
+                transactionLabel.firstChild.textContent = 'Date received ';
+            } else if (direction.value === 'Outgoing') {
+                partyLabel.firstChild.textContent = 'Sent to / Recipient ';
+                transactionLabel.firstChild.textContent = 'Date released ';
+            } else {
+                partyLabel.firstChild.textContent = 'Sender / Recipient ';
+                transactionLabel.firstChild.textContent = 'Date received / released ';
+            }
+        };
+
+        if (direction) {
+            direction.addEventListener('change', updateDirectionLabels);
+            updateDirectionLabels();
+        }
+
+        form.addEventListener('submit', (event) => {
+            queueMicrotask(() => {
+                if (event.defaultPrevented || !submitButton || !submitLabel) {
+                    return;
+                }
+
+                submitButton.disabled = true;
+                submitLabel.textContent = 'Saving document';
+                form.setAttribute('aria-busy', 'true');
+            });
+        });
+    };
+
     initAuthForm();
     initSidebar();
+    initSearchFilters();
+    initRecordListLoading();
+    initDocumentForm();
 })();

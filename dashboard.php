@@ -1,22 +1,9 @@
 <?php
+require_once __DIR__ . '/includes/bootstrap.php';
+
 $barangayName = 'BARANGAY NAME';
 
-$summary = [
-    ['label' => 'Total records', 'value' => 0],
-    ['label' => 'Unfiled', 'value' => 0],
-    ['label' => 'Pending', 'value' => 0],
-    ['label' => 'In process', 'value' => 0],
-    ['label' => 'Completed', 'value' => 0],
-];
-
 $cabinets = [
-    [
-        'code' => 'INTAKE',
-        'name' => 'Unfiled documents',
-        'description' => 'Recorded documents waiting for a category.',
-        'intake' => true,
-        'documents' => [],
-    ],
     [
         'code' => 'CABINET 01',
         'name' => 'Finance',
@@ -48,6 +35,64 @@ $cabinets = [
         'documents' => [],
     ],
 ];
+
+$storedDocuments = is_array($_SESSION['documents'] ?? null) ? $_SESSION['documents'] : [];
+
+foreach ($storedDocuments as $storedDocument) {
+    foreach ($cabinets as &$cabinet) {
+        if (($storedDocument['category'] ?? '') === $cabinet['name']) {
+            $cabinet['documents'][] = $storedDocument;
+            break;
+        }
+    }
+    unset($cabinet);
+}
+
+$allowedYears = ['2026', '2025'];
+$allowedStatuses = ['Pending', 'In Process', 'Completed'];
+$searchQuery = trim((string) ($_GET['search'] ?? ''));
+$selectedYear = array_key_exists('year', $_GET) ? trim((string) $_GET['year']) : '2026';
+$selectedStatus = trim((string) ($_GET['status'] ?? ''));
+
+if ($selectedYear !== '' && !in_array($selectedYear, $allowedYears, true)) {
+    $selectedYear = '';
+}
+
+if ($selectedStatus !== '' && !in_array($selectedStatus, $allowedStatuses, true)) {
+    $selectedStatus = '';
+}
+
+$filterWasSubmitted = $searchQuery !== ''
+    || $selectedStatus !== ''
+    || (array_key_exists('year', $_GET) && $selectedYear !== '');
+$visibleDocuments = [];
+
+foreach ($cabinets as &$cabinet) {
+    $cabinet['documents'] = array_values(array_filter(
+        $cabinet['documents'],
+        static function (array $document) use ($searchQuery, $selectedYear, $selectedStatus): bool {
+            $matchesSearch = $searchQuery === ''
+                || stripos((string) ($document['tracking'] ?? ''), $searchQuery) !== false
+                || stripos((string) ($document['title'] ?? ''), $searchQuery) !== false;
+
+            $recordedDate = (string) ($document['recorded'] ?? $document['recorded_at'] ?? '');
+            $timestamp = $recordedDate !== '' ? strtotime($recordedDate) : false;
+            $recordYear = $timestamp !== false ? date('Y', $timestamp) : '';
+            $matchesYear = $selectedYear === '' || $recordYear === $selectedYear;
+            $matchesStatus = $selectedStatus === ''
+                || strcasecmp((string) ($document['status'] ?? ''), $selectedStatus) === 0;
+
+            return $matchesSearch && $matchesYear && $matchesStatus;
+        }
+    ));
+
+    $visibleDocuments = array_merge($visibleDocuments, $cabinet['documents']);
+}
+unset($cabinet);
+
+$activeFilterCount = ($searchQuery !== '' ? 1 : 0)
+    + ($selectedStatus !== '' ? 1 : 0)
+    + ($filterWasSubmitted && $selectedYear !== '' ? 1 : 0);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -99,7 +144,13 @@ $cabinets = [
                 <span class="online-status"><i aria-hidden="true"></i> Session active</span>
             </div>
 
-            <a class="sign-out" href="logout.php"><span>Sign out</span><span aria-hidden="true">-&gt;</span></a>
+            <form class="sign-out" action="logout.php" method="post">
+                <?= csrf_field() ?>
+                <button type="submit">
+                    <span>Sign out</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"></path></svg>
+                </button>
+            </form>
         </aside>
 
         <button class="sidebar-backdrop" type="button" data-sidebar-backdrop aria-label="Close navigation" hidden></button>
@@ -107,15 +158,13 @@ $cabinets = [
         <main class="main-content" id="main-content">
             <header class="system-bar">
                 <div>
-                    <button class="menu-toggle" type="button" data-sidebar-toggle aria-controls="app-sidebar" aria-expanded="false">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                        <span>Menu</span>
-                    </button>
                     <div class="topbar-brand" aria-label="B-TRACK">
                         <span class="topbar-brand-mark" aria-hidden="true">BT</span>
                         <span class="topbar-brand-name">B-TRACK</span>
                     </div>
-                    <span class="topbar-context">BARANGAY RECORDS</span>
+                    <button class="menu-toggle" type="button" data-sidebar-toggle aria-controls="app-sidebar" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    </button>
                 </div>
             </header>
 
@@ -125,17 +174,8 @@ $cabinets = [
                     <p>Document Registry and Processing Overview</p>
                 </div>
                 <div class="page-actions">
-                    <a class="button button--primary" href="documents/create.php"><span aria-hidden="true">+</span> Record document</a>
+                    <a class="button button--primary" href="documents/create.php" aria-label="Record document"><span aria-hidden="true">+</span> Record document</a>
                 </div>
-            </section>
-
-            <section class="summary-strip" aria-label="Document summary">
-                <?php foreach ($summary as $item): ?>
-                    <article>
-                        <span><?= htmlspecialchars($item['label'], ENT_QUOTES, 'UTF-8') ?></span>
-                        <strong><?= number_format($item['value']) ?></strong>
-                    </article>
-                <?php endforeach; ?>
             </section>
 
             <section class="workspace-toolbar" aria-label="Cabinet controls">
@@ -150,29 +190,56 @@ $cabinets = [
                     </a>
                 </div>
 
-                <form class="filters" action="documents/index.php" method="get">
-                    <label class="search-field">
-                        <span class="sr-only">Search documents</span>
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg>
-                        <input type="search" name="search" placeholder="Search tracking number or title">
-                    </label>
-                    <label>
-                        <span class="sr-only">Filter by year</span>
-                        <select name="year">
-                            <option value="2026">Year / 2026</option>
-                            <option value="2025">Year / 2025</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span class="sr-only">Filter by status</span>
-                        <select name="status">
-                            <option value="">All statuses</option>
-                            <option>Pending</option>
-                            <option>In Process</option>
-                            <option>Completed</option>
-                        </select>
-                    </label>
-                    <button type="submit">Search</button>
+                <form class="filters" action="dashboard.php" method="get" data-search-filters>
+                    <div class="search-control">
+                        <label class="search-field">
+                            <span class="sr-only">Search documents</span>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg>
+                            <input type="search" name="search" value="<?= htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8') ?>" placeholder="Search tracking number or title">
+                        </label>
+                        <button class="filter-toggle" type="button" aria-label="Open search filters" aria-controls="search-filter-panel" aria-expanded="false" data-filter-toggle>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
+                            </svg>
+                            <?php if ($activeFilterCount > 0): ?>
+                                <span class="filter-count" aria-label="<?= $activeFilterCount ?> active filters"><?= $activeFilterCount ?></span>
+                            <?php endif; ?>
+                        </button>
+                        <button class="search-submit" type="submit" aria-label="Search documents" title="Search documents">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg>
+                        </button>
+                    </div>
+
+                    <div class="filter-popover" id="search-filter-panel" data-filter-panel hidden>
+                        <div class="filter-popover__heading">
+                            <span>FILTER SEARCH</span>
+                            <span><?= $activeFilterCount ?> ACTIVE</span>
+                        </div>
+                        <div class="filter-options">
+                            <label>
+                                <span>Year</span>
+                                <select name="year">
+                                    <option value="">All years</option>
+                                    <?php foreach ($allowedYears as $year): ?>
+                                        <option value="<?= $year ?>"<?= $selectedYear === $year ? ' selected' : '' ?>>Year / <?= $year ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Status</span>
+                                <select name="status">
+                                    <option value="">All statuses</option>
+                                    <?php foreach ($allowedStatuses as $status): ?>
+                                        <option value="<?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>"<?= $selectedStatus === $status ? ' selected' : '' ?>><?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="filter-actions">
+                            <a href="dashboard.php?year=" data-clear-filters>Clear filters</a>
+                            <button type="submit">Apply filters</button>
+                        </div>
+                    </div>
                 </form>
             </section>
 
@@ -182,9 +249,16 @@ $cabinets = [
                         <span>DIGITAL RECORDS INDEX</span>
                         <h2 id="cabinet-title">Record categories</h2>
                     </div>
-                    <p>Organized by document type</p>
                 </header>
 
+                <?php if ($filterWasSubmitted && count($visibleDocuments) === 0): ?>
+                    <div class="no-results" role="status">
+                        <span>[ NO MATCHES ]</span>
+                        <h3>No records match your search</h3>
+                        <p>Try another keyword or remove one of the selected filters.</p>
+                        <a href="dashboard.php?year=">Clear search and filters</a>
+                    </div>
+                <?php else: ?>
                 <div class="cabinet-board" tabindex="0" aria-label="Document cabinets. Scroll horizontally to view additional cabinets.">
                     <?php foreach ($cabinets as $cabinet): ?>
                         <?php $documentCount = count($cabinet['documents']); ?>
@@ -219,8 +293,8 @@ $cabinets = [
                                                 <div><dt>Recorded</dt><dd><?= htmlspecialchars($document['recorded'], ENT_QUOTES, 'UTF-8') ?></dd></div>
                                             </dl>
                                             <div class="location-label">
-                                                <span>PHYSICAL LOCATION</span>
-                                                <strong><?= htmlspecialchars($document['location'], ENT_QUOTES, 'UTF-8') ?></strong>
+                                                <span>DOCUMENT CATEGORY</span>
+                                                <strong><?= htmlspecialchars($document['category'], ENT_QUOTES, 'UTF-8') ?></strong>
                                             </div>
                                             <a href="documents/view.php?id=<?= $document['id'] ?>">Open record -&gt;</a>
                                         </article>
@@ -235,6 +309,7 @@ $cabinets = [
                         </article>
                     <?php endforeach; ?>
                 </div>
+                <?php endif; ?>
             </section>
         </main>
     </div>

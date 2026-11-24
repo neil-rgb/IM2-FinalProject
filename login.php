@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/includes/bootstrap.php';
+
 $noticeKey = isset($_GET['notice']) && is_string($_GET['notice']) ? $_GET['notice'] : '';
 $notices = [
     'invalid' => [
@@ -76,6 +78,7 @@ $notice = $notices[$noticeKey] ?? null;
                 </div>
 
                 <form class="login-form" id="login-form" action="login.php" method="post" data-auth-form novalidate>
+                    <?= csrf_field() ?>
                     <div class="field-group">
                         <div class="field-heading">
                             <label for="username">Username <span aria-hidden="true">*</span></label>
