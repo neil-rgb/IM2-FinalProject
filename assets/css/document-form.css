@@ -3,12 +3,13 @@
     --paper: #f3f2ec;
     --field: #ebeae4;
     --ink: #181916;
+    --accent-blue: #343652;
     --muted-ink: #565852;
     --rule: #c5c5bd;
     --rule-strong: #888a82;
     --error: #9b3128;
     --success: #2f6145;
-    --focus: #1f5d83;
+    --focus: var(--accent-blue);
     --font-title: 1.375rem;
     --font-body: 0.875rem;
     --font-small: 0.6875rem;
@@ -316,7 +317,7 @@ h1 {
 .form-field select:focus,
 .form-field textarea:focus {
     border-color: var(--focus);
-    box-shadow: 0 0 0 2px rgba(31, 93, 131, 0.18);
+    box-shadow: 0 0 0 2px rgba(52, 54, 82, 0.2);
 }
 
 .form-field input[aria-invalid="true"],
@@ -360,7 +361,7 @@ h1 {
     align-items: center;
     justify-content: center;
     padding: 0.625rem 0.875rem;
-    border: 1px solid var(--ink);
+    border: 1px solid var(--accent-blue);
 }
 
 .form-actions a {
@@ -373,7 +374,7 @@ h1 {
     gap: 1rem;
     color: var(--paper);
     cursor: pointer;
-    background: var(--ink);
+    background: var(--accent-blue);
 }
 
 .form-actions a:hover,

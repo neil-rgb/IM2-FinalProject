@@ -1,27 +1,32 @@
 <?php
 require_once dirname(__DIR__) . '/includes/auth.php';
 
-$categories = [
-    'Finance',
-    'Resolutions',
-    'Requests & Endorsements',
-    'Notices & Communications',
-    'Administrative Records',
-];
+redirect('../dashboard.php?add=1');
+
+$categories = [];
+$locations = [];
 $directions = ['Incoming', 'Outgoing'];
 $today = date('Y-m-d');
 $notice = pull_flash();
 $errors = [];
 
+try {
+    $categories = db()->query('SELECT type_id, type_name FROM Document_Types ORDER BY type_name')->fetchAll();
+    $locations = db()->query(
+        'SELECT location_id, cabinet, drawer, folder FROM Storage_Locations ORDER BY cabinet, drawer, folder'
+    )->fetchAll();
+} catch (PDOException $exception) {
+    error_log('B-TRACK document form database error: ' . $exception->getMessage());
+    $errors['_form'] = 'The document database is unavailable. Check the MySQL connection and imported tables.';
+}
+
 $values = [
     'title' => '',
     'category' => '',
     'direction' => '',
-    'document_date' => '',
     'party_name' => '',
     'transaction_date' => '',
-    'description' => '',
-    'remarks' => '',
+    'location_id' => '',
 ];
 
 if (is_post_request()) {
@@ -37,16 +42,18 @@ if (is_post_request()) {
         $errors['title'] = 'Document title is required.';
     }
 
-    if (!in_array($values['category'], $categories, true)) {
+    $validTypeIds = array_map(static fn (array $category): string => (string) $category['type_id'], $categories);
+    if (!in_array($values['category'], $validTypeIds, true)) {
         $errors['category'] = 'Select a document category.';
+    }
+
+    $validLocationIds = array_map(static fn (array $location): string => (string) $location['location_id'], $locations);
+    if (!in_array($values['location_id'], $validLocationIds, true)) {
+        $errors['location_id'] = 'Select a storage location for the original paper document.';
     }
 
     if (!in_array($values['direction'], $directions, true)) {
         $errors['direction'] = 'Select whether the document is incoming or outgoing.';
-    }
-
-    if ($values['document_date'] === '') {
-        $errors['document_date'] = 'Document date is required.';
     }
 
     if ($values['party_name'] === '') {
@@ -57,56 +64,40 @@ if (is_post_request()) {
         $errors['transaction_date'] = 'Received or released date is required.';
     }
 
-    foreach (['document_date', 'transaction_date'] as $dateField) {
-        if ($values[$dateField] !== '') {
-            $date = DateTime::createFromFormat('Y-m-d', $values[$dateField]);
+    if ($values['transaction_date'] !== '') {
+        $date = DateTime::createFromFormat('Y-m-d', $values['transaction_date']);
 
-            if (!$date || $date->format('Y-m-d') !== $values[$dateField]) {
-                $errors[$dateField] = 'Enter a valid date.';
-            }
+        if (!$date || $date->format('Y-m-d') !== $values['transaction_date']) {
+            $errors['transaction_date'] = 'Enter a valid date.';
+        } elseif ($values['transaction_date'] > $today) {
+            $errors['transaction_date'] = 'Received or released date cannot be in the future.';
         }
     }
 
-    if ($values['description'] === '') {
-        $errors['description'] = 'Subject or description is required.';
-    }
-
     if ($errors === []) {
-        $sequence = (int) ($_SESSION['document_sequence'] ?? 0) + 1;
-        $_SESSION['document_sequence'] = $sequence;
-        $tracking = tracking_number($sequence);
-        $recordedBy = current_user()['full_name'] ?? 'Barangay Secretary';
-        $document = [
-            'id' => $sequence,
-            'tracking' => $tracking,
-            'title' => $values['title'],
-            'category' => $values['category'],
-            'direction' => $values['direction'],
-            'document_date' => $values['document_date'],
-            'party_name' => $values['party_name'],
-            'transaction_date' => $values['transaction_date'],
-            'description' => $values['description'],
-            'remarks' => $values['remarks'],
-            'status' => 'Pending',
-            'recorded' => date('M d, Y'),
-            'recorded_at' => date('Y-m-d H:i:s'),
-            'recorded_by' => $recordedBy,
-        ];
+        try {
+            $statement = db()->prepare('CALL sp_add_document(?, ?, ?, NULL, ?, ?, ?, ?)');
+            $statement->execute([
+                (int) current_user()['id'],
+                $values['title'],
+                (int) $values['category'],
+                $values['direction'],
+                $values['party_name'],
+                $values['transaction_date'],
+                (int) $values['location_id'],
+            ]);
+            $savedDocument = $statement->fetch();
+            $statement->closeCursor();
 
-        $_SESSION['documents'] = is_array($_SESSION['documents'] ?? null) ? $_SESSION['documents'] : [];
-        $_SESSION['documents'][] = $document;
-        $_SESSION['processing_history'] = is_array($_SESSION['processing_history'] ?? null) ? $_SESSION['processing_history'] : [];
-        $_SESSION['processing_history'][] = [
-            'document_id' => $sequence,
-            'tracking' => $tracking,
-            'action' => 'Document recorded',
-            'status' => 'Pending',
-            'handled_by' => $recordedBy,
-            'created_at' => date('Y-m-d H:i:s'),
-        ];
-
-        flash('success', 'Document saved', $tracking . ' was recorded successfully with Pending status.');
-        redirect('create.php');
+            $tracking = $savedDocument['tracking_number'] ?? 'Document';
+            flash('success', 'Document saved', $tracking . ' was recorded successfully with Pending status.');
+            redirect('index.php');
+        } catch (PDOException $exception) {
+            error_log('B-TRACK document save error: ' . $exception->getMessage());
+            $errors['_form'] = ($exception->errorInfo[0] ?? '') === '45000'
+                ? $exception->errorInfo[2] ?? 'The database rejected this document.'
+                : 'Unable to save the document. Check the selected category and storage location.';
+        }
     }
 }
 
@@ -188,7 +179,7 @@ function field_error(array $errors, string $field): string
                             <select id="category" name="category" required data-error-message="Select a document category." aria-describedby="category-error" aria-invalid="<?= isset($errors['category']) ? 'true' : 'false' ?>">
                                 <option value="">Select category</option>
                                 <?php foreach ($categories as $category): ?>
-                                    <option value="<?= e($category) ?>"<?= $values['category'] === $category ? ' selected' : '' ?>><?= e($category) ?></option>
+                                    <option value="<?= e($category['type_id']) ?>"<?= $values['category'] === (string) $category['type_id'] ? ' selected' : '' ?>><?= e($category['type_name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <p class="field-error" id="category-error" aria-live="polite"><?= e(field_error($errors, 'category')) ?></p>
@@ -206,15 +197,21 @@ function field_error(array $errors, string $field): string
                         </div>
 
                         <div class="form-field">
-                            <label for="document_date">Document date <span aria-hidden="true">*</span></label>
-                            <input id="document_date" name="document_date" type="date" value="<?= e($values['document_date']) ?>" max="<?= e($today) ?>" required data-error-message="Document date is required." aria-describedby="document_date-error" aria-invalid="<?= isset($errors['document_date']) ? 'true' : 'false' ?>">
-                            <p class="field-error" id="document_date-error" aria-live="polite"><?= e(field_error($errors, 'document_date')) ?></p>
-                        </div>
-
-                        <div class="form-field">
                             <label for="recorded_date">Date recorded</label>
                             <input id="recorded_date" type="date" value="<?= e($today) ?>" readonly aria-readonly="true">
                             <p class="field-hint">Automatically assigned by the system.</p>
+                        </div>
+
+                        <div class="form-field form-field--wide">
+                            <label for="location_id">Original paper location <span aria-hidden="true">*</span></label>
+                            <select id="location_id" name="location_id" required data-error-message="Select a storage location." aria-describedby="location_id-error" aria-invalid="<?= isset($errors['location_id']) ? 'true' : 'false' ?>">
+                                <option value="">Select cabinet, drawer, and folder</option>
+                                <?php foreach ($locations as $location): ?>
+                                    <?php $locationLabel = $location['cabinet'] . ' / ' . $location['drawer'] . ' / ' . $location['folder']; ?>
+                                    <option value="<?= e($location['location_id']) ?>"<?= $values['location_id'] === (string) $location['location_id'] ? ' selected' : '' ?>><?= e($locationLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="field-error" id="location_id-error" aria-live="polite"><?= e(field_error($errors, 'location_id')) ?></p>
                         </div>
                     </div>
                 </section>
@@ -247,12 +244,6 @@ function field_error(array $errors, string $field): string
                     </div>
 
                     <div class="form-grid">
-                        <div class="form-field form-field--wide">
-                            <label for="description">Subject or description <span aria-hidden="true">*</span></label>
-                            <textarea id="description" name="description" rows="3" required data-error-message="Subject or description is required." aria-describedby="description-error" aria-invalid="<?= isset($errors['description']) ? 'true' : 'false' ?>"><?= e($values['description']) ?></textarea>
-                            <p class="field-error" id="description-error" aria-live="polite"><?= e(field_error($errors, 'description')) ?></p>
-                        </div>
-
                         <div class="form-field">
                             <label for="status">Initial status</label>
                             <input id="status" name="status" type="text" value="Pending" readonly aria-readonly="true">
@@ -263,11 +254,6 @@ function field_error(array $errors, string $field): string
                             <label for="recorded_by">Recorded by</label>
                             <input id="recorded_by" type="text" value="<?= e(current_user()['full_name'] ?? 'Barangay Secretary') ?>" readonly aria-readonly="true">
                             <p class="field-hint">Uses the active secretary account.</p>
-                        </div>
-
-                        <div class="form-field form-field--wide">
-                            <label for="remarks">Remarks <span class="optional">OPTIONAL</span></label>
-                            <textarea id="remarks" name="remarks" rows="2"><?= e($values['remarks']) ?></textarea>
                         </div>
                     </div>
                 </section>

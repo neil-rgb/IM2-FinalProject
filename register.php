@@ -1,5 +1,49 @@
 <?php
-require_once __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/auth.php';
+
+require_guest();
+
+$registrationError = '';
+
+if (is_post_request()) {
+    $fullName = post_value('full_name');
+    $username = post_value('username');
+    $password = isset($_POST['password']) && is_string($_POST['password']) ? $_POST['password'] : '';
+    $confirmPassword = isset($_POST['confirm_password']) && is_string($_POST['confirm_password']) ? $_POST['confirm_password'] : '';
+
+    if (!verify_csrf_token(post_value('_token'))) {
+        $registrationError = 'Your form session expired. Refresh the page and try again.';
+    } elseif ($fullName === '' || $username === '' || $password === '' || $confirmPassword === '') {
+        $registrationError = 'Complete every required field.';
+    } elseif (mb_strlen($fullName) > 100 || mb_strlen($username) > 50 || !preg_match('/^[A-Za-z0-9._-]+$/', $username)) {
+        $registrationError = 'Use a name up to 100 characters and a username containing only letters, numbers, dots, underscores, or hyphens.';
+    } elseif (strlen($password) < 8) {
+        $registrationError = 'Password must be at least 8 characters long.';
+    } elseif ($password !== $confirmPassword) {
+        $registrationError = 'Passwords must match.';
+    } else {
+        try {
+            $statement = db()->prepare(
+                'INSERT INTO Users (full_name, username, password_hash, status) VALUES (:full_name, :username, :password_hash, \'Active\')'
+            );
+            $statement->execute([
+                'full_name' => $fullName,
+                'username' => $username,
+                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+            ]);
+
+            flash('success', 'Secretary account created', 'The account was saved successfully. You can now sign in.');
+            redirect('login.php');
+        } catch (PDOException $exception) {
+            if ($exception->getCode() === '23000') {
+                $registrationError = 'That username is already registered. Choose a different username.';
+            } else {
+                error_log('B-TRACK registration database error: ' . $exception->getMessage());
+                $registrationError = 'Unable to save the account. Make sure MySQL is running and the btrack database is imported.';
+            }
+        }
+    }
+}
 
 $noticeKey = isset($_GET['notice']) && is_string($_GET['notice']) ? $_GET['notice'] : '';
 $notices = [
@@ -69,6 +113,13 @@ $notice = $notices[$noticeKey] ?? null;
                             <strong><?= htmlspecialchars($notice['title'], ENT_QUOTES, 'UTF-8') ?></strong>
                             <p><?= htmlspecialchars($notice['message'], ENT_QUOTES, 'UTF-8') ?></p>
                         </div>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($registrationError !== ''): ?>
+                    <div class="notice notice--error" role="alert">
+                        <span class="notice-code" aria-hidden="true">[!]</span>
+                        <div><strong>Account not created</strong><p><?= e($registrationError) ?></p></div>
                     </div>
                 <?php endif; ?>
 

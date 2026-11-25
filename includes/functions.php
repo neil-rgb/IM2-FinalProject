@@ -97,3 +97,28 @@ function status_slug(string $status): string
 
     return trim($slug, '-');
 }
+
+/** Read document rows in the shape shared by the cabinet and list views. */
+function fetch_documents(): array
+{
+    $sql = <<<'SQL'
+        SELECT d.document_id AS id,
+               d.tracking_number AS tracking,
+               d.title,
+               t.type_name AS category,
+               d.direction,
+               d.sender_recipient AS party_name,
+               d.date_received AS recorded,
+               d.status,
+               CONCAT(l.cabinet, ' / ', l.drawer, ' / ', l.folder) AS location,
+               d.created_at AS recorded_at,
+               u.full_name AS recorded_by
+        FROM Documents d
+        JOIN Document_Types t ON t.type_id = d.type_id
+        JOIN Storage_Locations l ON l.location_id = d.location_id
+        JOIN Users u ON u.user_id = d.recorded_by
+        ORDER BY d.created_at DESC, d.document_id DESC
+        SQL;
+
+    return db()->query($sql)->fetchAll();
+}

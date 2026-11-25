@@ -96,6 +96,9 @@
         const sidebar = document.getElementById('app-sidebar');
         const toggle = document.querySelector('[data-sidebar-toggle]');
         const backdrop = document.querySelector('[data-sidebar-backdrop]');
+        const profileToggle = sidebar?.querySelector('[data-profile-toggle]');
+        const profileEditor = sidebar?.querySelector('#sidebar-profile-editor');
+        const profileBack = sidebar?.querySelector('[data-profile-back]');
 
         if (!sidebar || !toggle || !backdrop) {
             return;
@@ -109,9 +112,12 @@
             toggle.setAttribute('aria-expanded', 'true');
             backdrop.hidden = false;
 
-            const firstNavigationLink = sidebar.querySelector('.nav-link');
+            const profileField = sidebar.querySelector('#sidebar-profile-editor:not([hidden]) input:not([type="hidden"])');
+            const firstNavigationLink = sidebar.querySelector('.primary-nav .nav-link');
 
-            if (firstNavigationLink) {
+            if (profileField) {
+                profileField.focus();
+            } else if (firstNavigationLink) {
                 firstNavigationLink.focus();
             }
         };
@@ -127,6 +133,30 @@
             }
         };
 
+        const showProfileEditor = () => {
+            if (!profileToggle || !profileEditor) {
+                return;
+            }
+
+            profileEditor.hidden = false;
+            sidebar.classList.add('is-editing-profile');
+            profileToggle.setAttribute('aria-expanded', 'true');
+            profileToggle.classList.add('is-active');
+            profileEditor.querySelector('input:not([type="hidden"])')?.focus();
+        };
+
+        const hideProfileEditor = () => {
+            if (!profileToggle || !profileEditor) {
+                return;
+            }
+
+            profileEditor.hidden = true;
+            sidebar.classList.remove('is-editing-profile');
+            profileToggle.setAttribute('aria-expanded', 'false');
+            profileToggle.classList.remove('is-active');
+            profileToggle.focus();
+        };
+
         toggle.addEventListener('click', openSidebar);
         backdrop.addEventListener('click', () => closeSidebar());
         sidebar.addEventListener('pointerleave', (event) => {
@@ -135,9 +165,23 @@
             }
         });
 
-        sidebar.querySelectorAll('a').forEach((link) => {
+        sidebar.querySelectorAll('.nav-link[href]').forEach((link) => {
             link.addEventListener('click', () => closeSidebar(false));
         });
+
+        profileToggle?.addEventListener('click', () => {
+            if (profileEditor?.hidden) {
+                showProfileEditor();
+            } else {
+                hideProfileEditor();
+            }
+        });
+        profileBack?.addEventListener('click', hideProfileEditor);
+
+        if (profileEditor && !profileEditor.hidden) {
+            const errorSummary = profileEditor.querySelector('.sidebar-profile-error');
+            (errorSummary || profileEditor.querySelector('input:not([type="hidden"])'))?.focus();
+        }
 
         document.addEventListener('keydown', (event) => {
             if (!document.body.classList.contains('sidebar-open')) {
@@ -293,9 +337,107 @@
         });
     };
 
+    const initAddDocumentModal = () => {
+        const modal = document.querySelector('[data-add-document-modal]');
+        const dialog = modal?.querySelector('[data-add-document-dialog]');
+        const openButton = document.querySelector('[data-add-document-open]');
+
+        if (!modal || !dialog || !openButton) {
+            return;
+        }
+
+        const closeButtons = modal.querySelectorAll('[data-add-document-close]');
+        const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+        let previousFocus = null;
+
+        const closeModal = (restoreFocus = true) => {
+            modal.hidden = true;
+            modal.classList.remove('is-open');
+            document.body.classList.remove('modal-open');
+
+            if (restoreFocus && previousFocus instanceof HTMLElement) {
+                previousFocus.focus();
+            }
+        };
+
+        const showModal = (focusFirst = true) => {
+            previousFocus = document.activeElement;
+            modal.hidden = false;
+            modal.classList.add('is-open');
+            document.body.classList.add('modal-open');
+
+            if (focusFirst) {
+                const firstField = dialog.querySelector('input:not([type="hidden"]), select');
+                (firstField || dialog).focus();
+            }
+        };
+
+        openButton.addEventListener('click', () => showModal());
+        closeButtons.forEach((button) => button.addEventListener('click', () => closeModal()));
+
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+
+        const direction = modal.querySelector('[data-modal-direction]');
+        const partyLabel = modal.querySelector('[data-modal-party-label]');
+        const dateLabel = modal.querySelector('[data-modal-date-label]');
+        direction?.addEventListener('change', () => {
+            if (direction.value === 'Incoming') {
+                partyLabel.textContent = 'Received from / Sender *';
+                dateLabel.textContent = 'Date received *';
+            } else if (direction.value === 'Outgoing') {
+                partyLabel.textContent = 'Sent to / Recipient *';
+                dateLabel.textContent = 'Date released *';
+            } else {
+                partyLabel.textContent = 'Sender / Recipient *';
+                dateLabel.textContent = 'Date received / released *';
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (modal.hidden) {
+                return;
+            }
+
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeModal();
+                return;
+            }
+
+            if (event.key !== 'Tab') {
+                return;
+            }
+
+            const focusable = Array.from(dialog.querySelectorAll(focusableSelector));
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+
+            if (!first || !last) {
+                return;
+            }
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
+
+        if (!modal.hidden) {
+            showModal(false);
+            (modal.querySelector('[role="alert"]') || dialog.querySelector('input:not([type="hidden"]), select'))?.focus();
+        }
+    };
+
     initAuthForm();
     initSidebar();
     initSearchFilters();
     initRecordListLoading();
     initDocumentForm();
+    initAddDocumentModal();
 })();

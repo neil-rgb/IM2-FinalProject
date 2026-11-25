@@ -1,10 +1,27 @@
 <?php
-require_once dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/auth.php';
+require_auth('../login.php');
 
 $barangayName = 'BARANGAY NAME';
+try {
+    $savedBarangayName = db()->query('SELECT barangay_name FROM Barangay_Profile WHERE profile_id = 1')->fetchColumn();
+    if (is_string($savedBarangayName) && $savedBarangayName !== '') {
+        $barangayName = $savedBarangayName;
+    }
+} catch (PDOException $exception) {
+    error_log('B-TRACK barangay name load error: ' . $exception->getMessage());
+}
 
-// Session records provide working behavior until the MySQL layer is connected.
-$documents = is_array($_SESSION['documents'] ?? null) ? $_SESSION['documents'] : [];
+$databaseError = '';
+$notice = pull_flash();
+
+try {
+    $documents = fetch_documents();
+} catch (PDOException $exception) {
+    error_log('B-TRACK document list database error: ' . $exception->getMessage());
+    $documents = [];
+    $databaseError = 'Unable to load records from the database. Check that MySQL is running.';
+}
 
 $allowedYears = ['2026', '2025'];
 $allowedStatuses = ['Pending', 'In Process', 'Completed'];
@@ -81,25 +98,6 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
                 </div>
             </div>
 
-            <nav class="primary-nav" aria-label="B-TRACK sections">
-                <a class="nav-link" href="../dashboard.php">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
-                    <span>Dashboard</span><span class="nav-code">01</span>
-                </a>
-                <a class="nav-link is-active" href="index.php" aria-current="page">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h11l5 5v13H4z"></path><path d="M15 3v6h5M8 13h8M8 17h8"></path></svg>
-                    <span>Documents</span><span class="nav-code">02</span>
-                </a>
-                <a class="nav-link" href="../history/index.php">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"></path><path d="M4 4v4.6h4.6M12 7v5l3 2"></path></svg>
-                    <span>Processing history</span><span class="nav-code">03</span>
-                </a>
-                <a class="nav-link" href="../reports/pending.php">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg>
-                    <span>Reports</span><span class="nav-code">04</span>
-                </a>
-            </nav>
-
             <div class="operator-panel">
                 <span>ACTIVE OPERATOR</span>
                 <strong>Barangay Secretary</strong>
@@ -133,25 +131,11 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
             <section class="page-heading" aria-labelledby="page-title">
                 <div>
                     <h1 id="page-title"><?= htmlspecialchars($barangayName, ENT_QUOTES, 'UTF-8') ?></h1>
-                    <p>Document Registry and Processing Overview</p>
-                </div>
-                <div class="page-actions">
-                    <a class="button button--primary" href="create.php" aria-label="Record document"><span aria-hidden="true">+</span> Record document</a>
+                    <p>Santo Domingo, Albay, Philippines</p>
                 </div>
             </section>
 
             <section class="workspace-toolbar" aria-label="Document list controls">
-                <div class="view-tabs" aria-label="Document views">
-                    <a href="../dashboard.php" aria-label="Cabinet view" title="Cabinet view">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
-                        <span class="sr-only">Cabinet view</span>
-                    </a>
-                    <a class="is-active" href="index.php" aria-current="page" aria-label="List view" title="List view">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12"></path><rect x="3" y="4" width="2" height="2"></rect><rect x="3" y="10" width="2" height="2"></rect><rect x="3" y="16" width="2" height="2"></rect></svg>
-                        <span class="sr-only">List view</span>
-                    </a>
-                </div>
-
                 <form class="filters" action="index.php" method="get" data-search-filters>
                     <div class="search-control">
                         <label class="search-field">
@@ -211,8 +195,34 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
                         <span>DIGITAL RECORDS INDEX</span>
                         <h2 id="record-list-title">All documents</h2>
                     </div>
-                    <p><strong><?= number_format(count($filteredDocuments)) ?></strong> records shown</p>
+                    <div class="record-list-heading__right">
+                        <p><strong><?= number_format(count($filteredDocuments)) ?></strong> records shown</p>
+                        <div class="section-actions">
+                            <a class="button button--primary" href="create.php" aria-label="Record document"><span aria-hidden="true">+</span> Record document</a>
+                            <div class="view-tabs" aria-label="Document views">
+                                <a href="../dashboard.php" aria-label="Grid View" title="Grid View">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+                                    <span class="sr-only">Grid View</span>
+                                </a>
+                                <a class="is-active" href="index.php" aria-current="page" aria-label="List View" title="List View">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12"></path><rect x="3" y="4" width="2" height="2"></rect><rect x="3" y="10" width="2" height="2"></rect><rect x="3" y="16" width="2" height="2"></rect></svg>
+                                    <span class="sr-only">List view</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
                 </header>
+
+                <?php if ($notice): ?>
+                    <div class="form-notice form-notice--success" role="status">
+                        <span>[ OK ]</span>
+                        <div><strong><?= e($notice['title'] ?? 'Saved') ?></strong><p><?= e($notice['message'] ?? '') ?></p></div>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($databaseError !== ''): ?>
+                    <div class="form-notice" role="alert"><strong><?= e($databaseError) ?></strong></div>
+                <?php endif; ?>
 
                 <div class="list-loading" role="status" data-list-loading hidden>
                     <span class="loading-indicator" aria-hidden="true"></span>

@@ -1,5 +1,44 @@
 <?php
-require_once __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/auth.php';
+
+require_guest();
+
+$loginError = '';
+
+if (is_post_request()) {
+    $username = post_value('username');
+    $password = isset($_POST['password']) && is_string($_POST['password']) ? $_POST['password'] : '';
+    $csrfToken = post_value('_token');
+
+    if (!verify_csrf_token($csrfToken)) {
+        $loginError = 'Your form session expired. Refresh the page and try again.';
+    } elseif ($username === '' || $password === '') {
+        $loginError = 'Enter both your username and password before continuing.';
+    } else {
+        try {
+            $statement = db()->prepare(
+                'SELECT user_id, full_name, username, password_hash, status FROM Users WHERE username = :username LIMIT 1'
+            );
+            $statement->execute(['username' => $username]);
+            $user = $statement->fetch();
+
+            if (!$user || $user['status'] !== 'Active' || !password_verify($password, $user['password_hash'])) {
+                $loginError = 'The username or password is incorrect, or the account is inactive.';
+            } else {
+                login_user([
+                    'id' => $user['user_id'],
+                    'username' => $user['username'],
+                    'full_name' => $user['full_name'],
+                    'role' => 'Secretary',
+                ]);
+                redirect('dashboard.php');
+            }
+        } catch (PDOException $exception) {
+            error_log('B-TRACK login database error: ' . $exception->getMessage());
+            $loginError = 'Unable to connect to the account database. Make sure MySQL is running and the btrack database is imported.';
+        }
+    }
+}
 
 $noticeKey = isset($_GET['notice']) && is_string($_GET['notice']) ? $_GET['notice'] : '';
 $notices = [
@@ -20,7 +59,7 @@ $notices = [
     ],
 ];
 
-$notice = $notices[$noticeKey] ?? null;
+$notice = pull_flash() ?? ($notices[$noticeKey] ?? null);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -69,6 +108,13 @@ $notice = $notices[$noticeKey] ?? null;
                             <strong><?= htmlspecialchars($notice['title'], ENT_QUOTES, 'UTF-8') ?></strong>
                             <p><?= htmlspecialchars($notice['message'], ENT_QUOTES, 'UTF-8') ?></p>
                         </div>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($loginError !== ''): ?>
+                    <div class="notice notice--error" role="alert">
+                        <span class="notice-code" aria-hidden="true">[!]</span>
+                        <div><strong>Sign in failed</strong><p><?= e($loginError) ?></p></div>
                     </div>
                 <?php endif; ?>
 
