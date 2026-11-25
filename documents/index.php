@@ -99,9 +99,8 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
             </div>
 
             <div class="operator-panel">
-                <span>ACTIVE OPERATOR</span>
+                <span>SECRETARY</span>
                 <strong>Barangay Secretary</strong>
-                <span class="online-status"><i aria-hidden="true"></i> Session active</span>
             </div>
 
             <form class="sign-out" action="../logout.php" method="post">

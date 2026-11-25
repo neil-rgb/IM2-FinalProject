@@ -335,9 +335,8 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
             </section>
 
             <div class="operator-panel">
-                <span>ACTIVE OPERATOR</span>
+                <span>SECRETARY</span>
                 <strong><?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?></strong>
-                <span class="online-status"><i aria-hidden="true"></i> Session active</span>
             </div>
 
             <form class="sign-out" action="logout.php" method="post">
@@ -379,7 +378,11 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
                 </div>
             </section>
 
-            <section class="workspace-toolbar" aria-label="Cabinet controls">
+            <section class="workspace-toolbar" aria-label="Record categories and search">
+                <div class="workspace-toolbar__heading">
+                    <span>DIGITAL RECORDS INDEX</span>
+                    <h2 id="cabinet-title">Record categories</h2>
+                </div>
                 <form class="filters" action="dashboard.php" method="get" data-search-filters>
                     <div class="search-control">
                         <label class="search-field">
@@ -435,10 +438,6 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
 
             <section class="cabinet-section" aria-labelledby="cabinet-title">
                 <header class="section-heading">
-                    <div>
-                        <span>DIGITAL RECORDS INDEX</span>
-                        <h2 id="cabinet-title">Record categories</h2>
-                    </div>
                     <div class="section-actions">
                         <button class="button button--primary" type="button" data-add-document-open aria-haspopup="dialog"><span aria-hidden="true">+</span> Record document</button>
                         <div class="view-tabs" aria-label="Document views">
