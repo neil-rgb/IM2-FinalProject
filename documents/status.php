@@ -14,7 +14,7 @@ if (!is_int($documentId) || $documentId < 1) {
     redirect('index.php', 303);
 }
 
-$recordUrl = 'view.php?id=' . $documentId;
+$recordUrl = 'view.php?' . http_build_query(['id' => $documentId] + document_browse_query());
 $expectedStatus = post_value('current_status');
 $nextStatus = next_document_status($expectedStatus);
 $remarks = post_value('remarks');
@@ -76,6 +76,11 @@ try {
         $connection->rollBack();
         flash('error', 'Record not found', 'This document could not be found.');
         redirect('index.php', 303);
+    }
+
+    if (document_is_recycled($connection, $documentId)) {
+        $connection->rollBack();
+        $reject('Restore this record before changing its status.');
     }
 
     if ($currentStatus !== $expectedStatus) {

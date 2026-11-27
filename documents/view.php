@@ -21,11 +21,15 @@ if (is_int($documentId) && $documentId > 0) {
                     d.status,
                     CONCAT_WS(" / ", l.cabinet, l.drawer, l.folder) AS storage_location,
                     d.created_at AS recorded_at,
-                    u.full_name AS recorded_by
+                    u.full_name AS recorded_by,
+                    b.deleted_at,
+                    a.file_name AS soft_copy_name
              FROM Documents d
              JOIN Document_Types t ON t.type_id = d.type_id
              JOIN Storage_Locations l ON l.location_id = d.location_id
              JOIN Users u ON u.user_id = d.recorded_by
+             LEFT JOIN Document_Recycle_Bin b ON b.document_id = d.document_id
+             LEFT JOIN Document_Soft_Copies a ON a.document_id = d.document_id
              WHERE d.document_id = :document_id
              LIMIT 1'
         );
@@ -43,10 +47,21 @@ if (!$document && !$loadError) {
 
 $statusClass = $document ? status_slug((string) $document['status']) : '';
 $notice = pull_flash();
-$nextStatus = $document && user_has_role('Secretary')
+$isRecycled = ($document['deleted_at'] ?? null) !== null;
+$canMoveToBin = $document && !$isRecycled && user_has_role('Secretary');
+$showRecycleForm = $canMoveToBin && query_value('move-to-bin') === '1';
+$nextStatus = $document && !$isRecycled && user_has_role('Secretary')
     ? next_document_status((string) $document['status'])
     : null;
-$recordUrl = $document ? 'view.php?id=' . (int) $document['id'] : '';
+$browseQuery = document_browse_query();
+$browseSuffix = $browseQuery === [] ? '' : '?' . http_build_query($browseQuery);
+$recordQuery = $document ? http_build_query(['id' => $document['id']] + $browseQuery) : '';
+$recordUrl = 'view.php?' . $recordQuery;
+$breadcrumbItems = document_breadcrumb_parents($browseQuery);
+if ($isRecycled) {
+    $breadcrumbItems[] = ['Recycle Bin', 'recycle-bin.php'];
+}
+$breadcrumbItems[] = [$document['tracking'] ?? 'Record unavailable'];
 $statusDraft = null;
 $staleStatusDraft = false;
 $savedStatusDraft = $_SESSION['_document_status_draft'] ?? null;
@@ -59,7 +74,7 @@ if ($document && is_array($savedStatusDraft) && $savedStatusDraft['document_id']
         $notice = ['type' => 'error', 'message' => 'The status changed. Review the record before continuing.'];
     }
 }
-$showStatusForm = $nextStatus !== null && !$staleStatusDraft
+$showStatusForm = $nextStatus !== null && !$staleStatusDraft && !$showRecycleForm
     && ($statusDraft !== null || query_value('change-status') === '1');
 $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
 ?>
@@ -72,174 +87,204 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
     <title><?= $document ? e($document['tracking']) . ' / B-TRACK' : 'Record unavailable / B-TRACK' ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/theme.css">
     <link rel="stylesheet" href="../assets/css/dashboard.css">
 </head>
 <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <main class="main-content record-detail-page" id="main-content">
-        <header class="record-detail-bar">
-            <a class="topbar-brand" href="../dashboard.php" aria-label="B-TRACK dashboard">
-                <span class="topbar-brand-mark" aria-hidden="true">BT</span>
-                <span class="topbar-brand-name">B-TRACK</span>
-            </a>
-        </header>
+    <div class="app-shell records-workspace">
+        <?php require dirname(__DIR__) . '/includes/document-sidebar.php'; ?>
 
-        <?php if ($notice): ?>
-            <div class="dashboard-toast dashboard-toast--<?= e($notice['type'] ?? 'success') ?>" role="<?= ($notice['type'] ?? '') === 'error' ? 'alert' : 'status' ?>">
-                <span><?= e(($notice['message'] ?? '') !== '' ? $notice['message'] : ($notice['title'] ?? 'Notice')) ?></span>
-            </div>
-        <?php endif; ?>
+        <main class="main-content" id="main-content">
+            <div class="records-content record-view">
+                <header class="records-header record-detail-bar">
+                    <?php require dirname(__DIR__) . '/includes/menu-button.php'; ?>
+                    <?php require dirname(__DIR__) . '/includes/breadcrumb.php'; ?>
+                </header>
 
-        <?php if ($document): ?>
-            <section class="record-detail-heading" aria-label="Record actions">
-                <p class="record-detail-eyebrow">DOCUMENT RECORD / <?= e($document['tracking']) ?></p>
-                <div class="record-detail-heading__actions">
-                    <span class="record-status record-status--<?= e($statusClass) ?>"><?= e($document['status']) ?></span>
-                    <?php if ($nextStatus !== null): ?>
-                        <a class="button button--secondary" href="<?= e($recordUrl . '&change-status=1') ?>" aria-haspopup="dialog" data-status-open>Change status</a>
-                    <?php endif; ?>
-                    <nav class="record-detail-navigation" aria-label="Record navigation">
-                        <a class="button button--secondary record-detail-back" href="index.php">All records</a>
-                        <a class="record-dashboard-exit" href="../dashboard.php" aria-label="Return to dashboard" title="Return to dashboard">
-                            <svg class="record-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                                <path fill-rule="evenodd" d="M9.53 2.47a.75.75 0 0 1 0 1.06L4.81 8.25H15a6.75 6.75 0 0 1 0 13.5h-3a.75.75 0 0 1 0-1.5h3a5.25 5.25 0 1 0 0-10.5H4.81l4.72 4.72a.75.75 0 1 1-1.06 1.06l-6-6a.75.75 0 0 1 0-1.06l6-6a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
-                            </svg>
-                            <span class="sr-only">Return to dashboard</span>
-                        </a>
-                    </nav>
-                    <a class="button button--primary record-detail-edit" href="edit.php?id=<?= urlencode((string) $document['id']) ?>">
-                        <svg class="record-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                            <path d="M21.731 2.269a2.625 2.625 0 0 0-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 0 0 0-3.712ZM19.513 8.199l-3.712-3.712-8.4 8.4a5.25 5.25 0 0 0-1.32 2.214l-.8 2.685a.75.75 0 0 0 .933.933l2.685-.8a5.25 5.25 0 0 0 2.214-1.32l8.4-8.4Z" />
-                            <path d="M5.25 5.25a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h10.5a3 3 0 0 0 3-3V13.5a.75.75 0 0 0-1.5 0v5.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5V8.25a1.5 1.5 0 0 1 1.5-1.5h5.25a.75.75 0 0 0 0-1.5H5.25Z" />
-                        </svg>
-                        <span>Edit details</span>
-                    </a>
-                </div>
-            </section>
+                <?php if ($notice): ?>
+                    <div class="dashboard-toast dashboard-toast--<?= e($notice['type'] ?? 'success') ?>" role="<?= ($notice['type'] ?? '') === 'error' ? 'alert' : 'status' ?>">
+                        <span><?= e(($notice['message'] ?? '') !== '' ? $notice['message'] : ($notice['title'] ?? 'Notice')) ?></span>
+                    </div>
+                <?php endif; ?>
 
-            <?php if ($nextStatus !== null): ?>
-                <dialog class="record-status-dialog" aria-labelledby="status-dialog-title" aria-describedby="status-dialog-description" data-status-dialog<?= $showStatusForm ? ' open' : '' ?>>
-                    <header class="document-modal__header">
-                        <div>
-                            <h2 id="status-dialog-title">Change document status</h2>
-                            <p id="status-dialog-description">The change and your remark will be saved in processing history.</p>
+                <?php if ($document): ?>
+                    <header class="record-detail-heading">
+                        <div class="record-detail-title">
+                            <h1 id="record-title"><?= e($document['title']) ?></h1>
+                            <div class="record-detail-meta">
+                                <strong class="record-detail-code"><?= e($document['tracking']) ?></strong>
+                                <span>Recorded <time datetime="<?= e(str_replace(' ', 'T', $document['recorded_at'])) ?>"><?= e($document['recorded_at']) ?></time></span>
+                                <span class="record-status record-status--<?= e($statusClass) ?>"><?= e($document['status']) ?></span>
+                                <?php if ($isRecycled): ?><span>In Recycle Bin</span><?php endif; ?>
+                            </div>
                         </div>
-                    </header>
-                    <form class="record-status-form" action="status.php" method="post">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="document_id" value="<?= e($document['id']) ?>">
-                        <input type="hidden" name="current_status" value="<?= e($document['status']) ?>">
-
-                        <div class="record-status-transition">
-                            <span class="record-status record-status--<?= e($statusClass) ?>"><span class="sr-only">Current status: </span><?= e($document['status']) ?></span>
-                            <span aria-hidden="true">→</span>
-                            <span class="record-status record-status--<?= e(status_slug($nextStatus)) ?>"><span class="sr-only">Next status: </span><?= e($nextStatus) ?></span>
-                        </div>
-
-                        <?php if ($statusDraft && !$invalidRemarks): ?>
-                            <p class="record-status-error" role="alert"><?= e($statusDraft['message']) ?></p>
-                        <?php endif; ?>
-
-                        <label class="modal-field" for="status-remarks">
-                            <span>Remarks <b aria-hidden="true">*</b></span>
-                            <textarea id="status-remarks" name="remarks" rows="3" maxlength="255" required autofocus aria-describedby="status-remarks-hint<?= $invalidRemarks ? ' status-remarks-error' : '' ?>"<?= $invalidRemarks ? ' aria-invalid="true"' : '' ?>><?= e($statusDraft['remarks'] ?? '') ?></textarea>
-                            <small id="status-remarks-hint" class="modal-field__hint">Briefly explain the change, up to 255 characters.</small>
-                            <?php if ($invalidRemarks): ?>
-                                <small id="status-remarks-error" role="alert"><?= e($statusDraft['message']) ?></small>
+                        <div class="record-detail-heading__actions" role="group" aria-label="Record actions">
+                            <?php if ($nextStatus !== null): ?>
+                                <a class="button button--secondary" href="<?= e($recordUrl . '&change-status=1') ?>" aria-haspopup="dialog" aria-controls="record-status-dialog" data-record-dialog-trigger>Change status</a>
                             <?php endif; ?>
-                        </label>
-
-                        <div class="form-actions">
-                            <a class="button button--secondary" href="<?= e($recordUrl) ?>" data-status-cancel>Cancel</a>
-                            <button class="button button--primary" type="submit">Confirm status change</button>
+                            <?php if ($isRecycled): ?>
+                                <a class="button button--secondary record-detail-back" href="recycle-bin.php">Recycle Bin</a>
+                            <?php else: ?>
+                                <a class="button button--primary record-detail-edit" href="edit.php?<?= e($recordQuery) ?>">
+                                    <svg class="record-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        <path d="M21.731 2.269a2.625 2.625 0 0 0-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 0 0 0-3.712ZM19.513 8.199l-3.712-3.712-8.4 8.4a5.25 5.25 0 0 0-1.32 2.214l-.8 2.685a.75.75 0 0 0 .933.933l2.685-.8a5.25 5.25 0 0 0 2.214-1.32l8.4-8.4Z" />
+                                        <path d="M5.25 5.25a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h10.5a3 3 0 0 0 3-3V13.5a.75.75 0 0 0-1.5 0v5.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5V8.25a1.5 1.5 0 0 1 1.5-1.5h5.25a.75.75 0 0 0 0-1.5H5.25Z" />
+                                    </svg>
+                                    <span>Edit details</span>
+                                </a>
+                                <?php if ($canMoveToBin): ?>
+                                    <a class="button button--secondary recycle-record-button" href="<?= e($recordUrl . '&move-to-bin=1') ?>" aria-label="Move to Recycle Bin" title="Move to Recycle Bin" aria-haspopup="dialog" aria-controls="move-to-bin-dialog" data-record-dialog-trigger>
+                                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"></path></svg>
+                                    </a>
+                                <?php endif; ?>
+                            <?php endif; ?>
                         </div>
-                    </form>
-                </dialog>
-            <?php endif; ?>
-
-            <section class="record-detail-cover" aria-labelledby="record-title">
-                <span class="folder-tab" aria-hidden="true"></span>
-                <div class="record-detail-code">
-                    <span>DOCUMENT FILE</span>
-                    <strong><?= e($document['tracking']) ?></strong>
-                </div>
-                <h1 id="record-title"><?= e($document['title']) ?></h1>
-                <div class="document-recorded record-detail-cover__recorded">
-                    <span>RECORDED</span>
-                    <time datetime="<?= e($document['recorded_at']) ?>"><?= e($document['recorded_at']) ?></time>
-                </div>
-            </section>
-
-            <section class="record-detail-panel" aria-label="Document information">
-                <div class="record-detail-sheet">
-                    <header class="record-detail-sheet__header">
-                        <strong>DOCUMENT REGISTER</strong>
-                        <span>RECORD DETAILS / <?= e($document['tracking']) ?></span>
                     </header>
-                    <div class="record-detail-groups">
-                        <section class="record-detail-group" aria-labelledby="record-classification-title">
-                            <header>
-                                <span>01</span>
+
+                    <?php if ($nextStatus !== null): ?>
+                        <dialog class="record-status-dialog" id="record-status-dialog" aria-labelledby="status-dialog-title" aria-describedby="status-dialog-description"<?= $showStatusForm ? ' open' : '' ?>>
+                            <header class="document-modal__header">
+                                <div>
+                                    <h2 id="status-dialog-title">Change document status</h2>
+                                    <p id="status-dialog-description">
+                                        The change and your remark will be saved in processing history.
+                                        <?php if ($nextStatus === 'Completed'): ?>Completed is final.<?php endif; ?>
+                                    </p>
+                                </div>
+                            </header>
+                            <form class="record-status-form" action="status.php<?= e($browseSuffix) ?>" method="post">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="document_id" value="<?= e($document['id']) ?>">
+                                <input type="hidden" name="current_status" value="<?= e($document['status']) ?>">
+
+                                <div class="record-status-transition">
+                                    <span class="record-status record-status--<?= e($statusClass) ?>"><span class="sr-only">Current status: </span><?= e($document['status']) ?></span>
+                                    <span aria-hidden="true">→</span>
+                                    <span class="record-status record-status--<?= e(status_slug($nextStatus)) ?>"><span class="sr-only">Next status: </span><?= e($nextStatus) ?></span>
+                                </div>
+
+                                <?php if ($statusDraft && !$invalidRemarks): ?>
+                                    <p class="record-status-error" role="alert"><?= e($statusDraft['message']) ?></p>
+                                <?php endif; ?>
+
+                                <label class="modal-field" for="status-remarks">
+                                    <span>Remarks <b aria-hidden="true">*</b></span>
+                                    <textarea id="status-remarks" name="remarks" rows="3" maxlength="255" required autofocus aria-describedby="status-remarks-hint<?= $invalidRemarks ? ' status-remarks-error' : '' ?>"<?= $invalidRemarks ? ' aria-invalid="true"' : '' ?>><?= e($statusDraft['remarks'] ?? '') ?></textarea>
+                                    <small id="status-remarks-hint" class="modal-field__hint">Briefly explain the change, up to 255 characters.</small>
+                                    <?php if ($invalidRemarks): ?>
+                                        <small id="status-remarks-error" role="alert"><?= e($statusDraft['message']) ?></small>
+                                    <?php endif; ?>
+                                </label>
+
+                                <div class="form-actions">
+                                    <a class="button button--secondary" href="<?= e($recordUrl) ?>" data-record-dialog-cancel>Cancel</a>
+                                    <button class="button button--primary" type="submit">Confirm status change</button>
+                                </div>
+                            </form>
+                        </dialog>
+                    <?php endif; ?>
+
+                    <?php if ($canMoveToBin): ?>
+                        <dialog class="record-status-dialog" id="move-to-bin-dialog" aria-labelledby="move-to-bin-title" aria-describedby="move-to-bin-description"<?= $showRecycleForm ? ' open' : '' ?>>
+                            <header class="document-modal__header">
+                                <div>
+                                    <h2 id="move-to-bin-title">Move record to Recycle Bin?</h2>
+                                    <p id="move-to-bin-description"><?= e($document['tracking']) ?> will leave active records. You can restore it from the Recycle Bin.</p>
+                                </div>
+                            </header>
+                            <form class="record-status-form" action="recycle-bin.php<?= e($browseSuffix) ?>" method="post">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="move">
+                                <input type="hidden" name="document_id" value="<?= e($document['id']) ?>">
+                                <div class="form-actions">
+                                    <a class="button button--secondary" href="<?= e($recordUrl) ?>" data-record-dialog-cancel autofocus>Cancel</a>
+                                    <button class="button button--primary" type="submit">Move to Recycle Bin</button>
+                                </div>
+                            </form>
+                        </dialog>
+                    <?php endif; ?>
+
+                    <div class="record-detail-columns">
+                        <section class="record-detail-panel" aria-label="Document information">
+                            <section class="record-detail-group" aria-labelledby="record-classification-title">
                                 <h2 id="record-classification-title">Classification</h2>
-                            </header>
-                            <dl>
-                                <div>
-                                    <dt>Document category</dt>
-                                    <dd><?= e($document['category']) ?></dd>
-                                </div>
-                                <div>
-                                    <dt>Direction</dt>
-                                    <dd><?= e($document['direction']) ?></dd>
-                                </div>
-                            </dl>
-                        </section>
+                                <dl>
+                                    <div>
+                                        <dt>Document category</dt>
+                                        <dd><?= e($document['category']) ?></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Direction</dt>
+                                        <dd><?= e($document['direction']) ?></dd>
+                                    </div>
+                                </dl>
+                            </section>
 
-                        <section class="record-detail-group" aria-labelledby="record-correspondence-title">
-                            <header>
-                                <span>02</span>
+                            <section class="record-detail-group" aria-labelledby="record-correspondence-title">
                                 <h2 id="record-correspondence-title">Correspondence</h2>
-                            </header>
-                            <dl>
-                                <div>
-                                    <dt>Sender / recipient</dt>
-                                    <dd><?= e($document['party_name']) ?></dd>
-                                </div>
-                                <div>
-                                    <dt>Date received / released</dt>
-                                    <dd><time datetime="<?= e($document['date_received']) ?>"><?= e($document['date_received']) ?></time></dd>
-                                </div>
-                            </dl>
+                                <dl>
+                                    <div>
+                                        <dt>Sender / recipient</dt>
+                                        <dd><?= e($document['party_name']) ?></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Date received / released</dt>
+                                        <dd><time datetime="<?= e($document['date_received']) ?>"><?= e($document['date_received']) ?></time></dd>
+                                    </div>
+                                </dl>
+                            </section>
+
                         </section>
 
-                        <section class="record-detail-group" aria-labelledby="record-archive-title">
-                            <header>
-                                <span>03</span>
+                        <section class="record-detail-panel" aria-label="Storage and soft copy">
+                            <section class="record-detail-group" aria-labelledby="record-archive-title">
                                 <h2 id="record-archive-title">Filing &amp; entry</h2>
-                            </header>
-                            <dl>
-                                <div>
-                                    <dt>Original paper location</dt>
-                                    <dd><?= e($document['storage_location']) ?></dd>
-                                </div>
-                                <div>
-                                    <dt>Recorded by</dt>
-                                    <dd><?= e($document['recorded_by']) ?></dd>
-                                </div>
-                            </dl>
+                                <dl>
+                                    <div>
+                                        <dt>Original paper location</dt>
+                                        <dd><?= e($document['storage_location']) ?></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Recorded by</dt>
+                                        <dd><?= e($document['recorded_by']) ?></dd>
+                                    </div>
+                                </dl>
+                            </section>
+
+                            <?php if (user_has_role('Secretary')): ?>
+                                <section class="record-detail-group record-soft-copy" aria-labelledby="record-soft-copy-title">
+                                    <h2 id="record-soft-copy-title">Soft copy</h2>
+                                    <div class="record-soft-copy__details">
+                                        <div>
+                                            <p><?= e($document['soft_copy_name'] ?? 'No soft copy attached') ?></p>
+                                            <?php if ($isRecycled && $document['soft_copy_name'] !== null): ?>
+                                                <p>Restore this record to open the file.</p>
+                                            <?php endif; ?>
+                                        </div>
+                                        <?php if (!$isRecycled && $document['soft_copy_name'] !== null): ?>
+                                            <div class="record-soft-copy__actions">
+                                                <a class="button button--secondary" href="soft-copy.php?id=<?= e($document['id']) ?>" target="_blank" rel="noopener">Preview</a>
+                                                <a class="button button--secondary" href="soft-copy.php?id=<?= e($document['id']) ?>&amp;download=1">Download</a>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </section>
+                            <?php endif; ?>
                         </section>
                     </div>
-                </div>
-            </section>
-        <?php else: ?>
-            <section class="record-not-found" aria-labelledby="record-title">
-                <p class="record-detail-eyebrow">DOCUMENT RECORD</p>
-                <h1 id="record-title"><?= $loadError ? 'Record could not be loaded' : 'Record not found' ?></h1>
-                <p><?= $loadError ? 'The record details are temporarily unavailable. Please try again.' : 'This record may have been moved or the link may be incorrect.' ?></p>
-                <a class="button button--primary" href="index.php">Return to all records <span aria-hidden="true">-&gt;</span></a>
-            </section>
-        <?php endif; ?>
-    </main>
+                <?php else: ?>
+                    <section class="record-not-found" aria-labelledby="record-title">
+                        <p class="record-detail-eyebrow">DOCUMENT RECORD</p>
+                        <h1 id="record-title"><?= $loadError ? 'Record could not be loaded' : 'Record not found' ?></h1>
+                        <p><?= $loadError ? 'The record details are temporarily unavailable. Please try again.' : 'This record may have been moved or the link may be incorrect.' ?></p>
+                        <a class="button button--primary" href="index.php">Return to all records <span aria-hidden="true">-&gt;</span></a>
+                    </section>
+                <?php endif; ?>
+            </div>
+        </main>
+    </div>
     <script src="../assets/js/app.js" defer></script>
 </body>
 </html>

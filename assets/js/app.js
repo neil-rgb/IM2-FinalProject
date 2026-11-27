@@ -328,101 +328,125 @@
         });
     };
 
-    const initStorageLocationSelect = (root, typeSelector, locationSelector) => {
-        const typeSelect = root.querySelector(typeSelector);
-        const locationControl = root.querySelector(locationSelector);
+    const initStorageLocationSelect = (form) => {
+        const typeSelect = form.querySelector('[name="category"], [name="type_id"]');
+        const locationSelect = form.querySelector('select[name="location_id"]');
 
-        if (!typeSelect || !locationControl) {
-            return;
-        }
-
-        if (locationControl instanceof HTMLInputElement && locationControl.type === 'radio') {
-            const locationChoices = Array.from(root.querySelectorAll(`${locationSelector}[data-location-choice]`));
-            const locationGroup = root.querySelector('[data-location-group]');
-            const emptyState = root.querySelector('[data-location-empty]');
-
-            const updateLocationChoices = () => {
-                const selectedTypeId = typeSelect.value;
-                let matchingCount = 0;
-
-                locationChoices.forEach((choice) => {
-                    const matchesType = selectedTypeId !== '' && choice.dataset.typeId === selectedTypeId;
-                    const label = choice.closest('[data-storage-choice]');
-
-                    if (choice.checked && !matchesType) {
-                        choice.checked = false;
-                    }
-
-                    choice.disabled = !matchesType;
-                    if (label) {
-                        label.hidden = !matchesType;
-                    }
-                    if (matchesType) {
-                        matchingCount += 1;
-                    }
-                });
-
-                if (emptyState) {
-                    emptyState.hidden = selectedTypeId !== '' && matchingCount > 0;
-                    emptyState.textContent = selectedTypeId === ''
-                        ? 'Choose a document category to display matching folders.'
-                        : 'No storage folders are configured for this category.';
-                }
-            };
-
-            locationChoices.forEach((choice) => {
-                choice.addEventListener('change', () => {
-                    if (!choice.checked) {
-                        return;
-                    }
-
-                    locationGroup?.setAttribute('aria-invalid', 'false');
-                    locationChoices.forEach((locationChoice) => locationChoice.setAttribute('aria-invalid', 'false'));
-                });
-            });
-
-            typeSelect.addEventListener('change', updateLocationChoices);
-            updateLocationChoices();
-            return;
-        }
-
-        const locationSelect = locationControl;
-        if (!(locationSelect instanceof HTMLSelectElement)) {
+        if (!typeSelect || !locationSelect) {
             return;
         }
 
         const placeholder = locationSelect.options[0];
+        const locationOptions = Array.from(locationSelect.options).slice(1);
+        const locationHint = form.querySelector('[data-location-hint]');
         const updateLocations = () => {
             const selectedTypeId = typeSelect.value;
+            const hasCategory = selectedTypeId !== '';
+            let hasMatchingFolders = false;
 
             if (locationSelect.value && locationSelect.selectedOptions[0]?.dataset.typeId !== selectedTypeId) {
                 locationSelect.value = '';
             }
 
-            locationSelect.disabled = selectedTypeId === '';
-            placeholder.textContent = selectedTypeId === ''
-                ? 'Select document type first'
-                : 'Select cabinet / drawer / folder';
-
-            Array.from(locationSelect.options).slice(1).forEach((option) => {
-                const matchesType = selectedTypeId !== '' && option.dataset.typeId === selectedTypeId;
+            for (const option of locationOptions) {
+                const matchesType = hasCategory && option.dataset.typeId === selectedTypeId;
                 option.hidden = !matchesType;
                 option.disabled = !matchesType;
-            });
+                hasMatchingFolders ||= matchesType;
+            }
+
+            locationSelect.disabled = !hasCategory;
+            placeholder.textContent = hasCategory && !hasMatchingFolders ? 'No matching folders' : 'Choose a folder';
+
+            if (locationHint) {
+                if (!hasCategory) {
+                    locationHint.textContent = 'Choose a document category first.';
+                } else {
+                    locationHint.textContent = hasMatchingFolders
+                        ? 'Folders are filtered by document category.'
+                        : 'No folders are configured for this category.';
+                }
+            }
         };
 
         typeSelect.addEventListener('change', updateLocations);
         updateLocations();
     };
 
-    const initDocumentForm = () => {
-        const form = document.querySelector('[data-document-form]');
-
+    const initFolderInventory = () => {
+        const form = document.querySelector('[data-inventory-selection]');
         if (!form) {
             return;
         }
 
-        initStorageLocationSelect(form, '[name="category"]', '[name="location_id"]');
+        const cabinet = form.querySelector('[data-inventory-cabinet]');
+        const drawer = form.querySelector('[data-inventory-drawer]');
+        const folder = form.querySelector('[data-inventory-folder]');
+        const viewButton = form.querySelector('button[type="submit"]');
+        const printButton = document.querySelector('[data-print-inventory]');
+        const locations = Array.from(folder.options).slice(1);
+        const loadedFolder = folder.selectedOptions[0];
+        const loadedFolderId = folder.value;
+
+        const setChoices = (select, placeholder, values, selected = '') => {
+            select.replaceChildren(new Option(placeholder, ''));
+            for (const value of new Set(values)) {
+                select.add(new Option(value, value));
+            }
+            select.value = selected;
+        };
+
+        const updateActions = () => {
+            viewButton.disabled = folder.value === '';
+            if (printButton) {
+                printButton.disabled = folder.value !== loadedFolderId;
+            }
+        };
+
+        const updateFolders = (selected = '') => {
+            for (const option of locations) {
+                const matches = option.dataset.cabinet === cabinet.value && option.dataset.drawer === drawer.value;
+                option.hidden = !matches;
+                option.disabled = !matches;
+            }
+            folder.value = selected;
+            folder.disabled = !drawer.value;
+            updateActions();
+        };
+
+        const updateDrawers = (selected = '') => {
+            const drawers = locations
+                .filter((option) => option.dataset.cabinet === cabinet.value)
+                .map((option) => option.dataset.drawer);
+            setChoices(drawer, 'Choose a drawer', drawers, selected);
+            drawer.disabled = !cabinet.value;
+        };
+
+        for (const location of locations) {
+            location.textContent = location.dataset.folder;
+        }
+        setChoices(cabinet, 'Choose a cabinet', locations.map((option) => option.dataset.cabinet), loadedFolder.dataset.cabinet);
+        cabinet.disabled = false;
+        cabinet.closest('label').hidden = false;
+        drawer.closest('label').hidden = false;
+        updateDrawers(loadedFolder.dataset.drawer);
+        updateFolders(loadedFolderId);
+
+        cabinet.addEventListener('change', () => {
+            updateDrawers();
+            updateFolders();
+        });
+        drawer.addEventListener('change', () => updateFolders());
+        folder.addEventListener('change', updateActions);
+
+        if (printButton) {
+            printButton.hidden = false;
+            printButton.addEventListener('click', () => window.print());
+        }
+    };
+
+    const initDocumentForm = (form) => {
+        initStorageLocationSelect(form);
 
         const direction = form.querySelector('[data-direction-select]');
         const partyLabel = form.querySelector('[data-party-label]');
@@ -443,7 +467,7 @@
                 transactionLabel.firstChild.textContent = 'Date released ';
             } else {
                 partyLabel.firstChild.textContent = 'Sender / Recipient ';
-                transactionLabel.firstChild.textContent = 'Date received / released ';
+                transactionLabel.firstChild.textContent = 'Document date ';
             }
         };
 
@@ -473,8 +497,6 @@
         if (!modal || !dialog || !openButton) {
             return;
         }
-
-        initStorageLocationSelect(modal, '[name="type_id"]', '[name="location_id"]');
 
         const closeButtons = modal.querySelectorAll('[data-add-document-close]');
         const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
@@ -508,22 +530,6 @@
         modal.addEventListener('click', (event) => {
             if (event.target === modal) {
                 closeModal();
-            }
-        });
-
-        const direction = modal.querySelector('[data-modal-direction]');
-        const partyLabel = modal.querySelector('[data-modal-party-label]');
-        const dateLabel = modal.querySelector('[data-modal-date-label]');
-        direction?.addEventListener('change', () => {
-            if (direction.value === 'Incoming') {
-                partyLabel.textContent = 'Received from / Sender *';
-                dateLabel.textContent = 'Date received *';
-            } else if (direction.value === 'Outgoing') {
-                partyLabel.textContent = 'Sent to / Recipient *';
-                dateLabel.textContent = 'Date released *';
-            } else {
-                partyLabel.textContent = 'Sender / Recipient *';
-                dateLabel.textContent = 'Date received / released *';
             }
         });
 
@@ -564,13 +570,25 @@
         }
     };
 
-    const initStatusDialog = () => {
-        const trigger = document.querySelector('[data-status-open]');
-        const dialog = document.querySelector('[data-status-dialog]');
+    const initRecordDialog = (trigger) => {
+        const dialog = document.getElementById(trigger.getAttribute('aria-controls'));
 
-        if (!trigger || typeof dialog?.showModal !== 'function') {
+        if (typeof dialog?.showModal !== 'function') {
             return;
         }
+
+        const form = dialog.querySelector('form');
+        const cancel = dialog.querySelector('[data-record-dialog-cancel]');
+        const submitButton = form.querySelector('button[type="submit"]');
+        const submitLabel = submitButton.textContent;
+        let saving = false;
+
+        const setSaving = (state) => {
+            saving = state;
+            submitButton.disabled = state;
+            submitButton.textContent = state ? 'Saving…' : submitLabel;
+            cancel.setAttribute('aria-disabled', String(state));
+        };
 
         const openDialog = () => {
             dialog.showModal();
@@ -586,9 +604,17 @@
             openDialog();
         });
 
-        dialog.querySelector('[data-status-cancel]')?.addEventListener('click', (event) => {
+        cancel.addEventListener('click', (event) => {
             event.preventDefault();
-            dialog.close();
+            if (!saving) {
+                dialog.close();
+            }
+        });
+
+        dialog.addEventListener('cancel', (event) => {
+            if (saving) {
+                event.preventDefault();
+            }
         });
 
         dialog.addEventListener('close', () => {
@@ -596,15 +622,22 @@
             trigger.focus({ preventScroll: true });
         });
 
-        const submitButton = dialog.querySelector('button[type="submit"]');
-        const submitLabel = submitButton.textContent;
-        dialog.querySelector('form').addEventListener('submit', () => {
-            submitButton.disabled = true;
-            submitButton.textContent = 'Saving…';
+        form.addEventListener('submit', (event) => {
+            if (saving) {
+                event.preventDefault();
+                return;
+            }
+
+            setSaving(true);
         });
-        window.addEventListener('pageshow', () => {
-            submitButton.disabled = false;
-            submitButton.textContent = submitLabel;
+
+        window.addEventListener('pageshow', (event) => {
+            if (event.persisted && saving) {
+                window.location.reload();
+                return;
+            }
+
+            setSaving(false);
         });
 
         if (dialog.open) {
@@ -618,7 +651,8 @@
     initWorkspaceScale();
     initSearchFilters();
     initRecordListLoading();
-    initDocumentForm();
+    initFolderInventory();
+    document.querySelectorAll('[data-document-form]').forEach(initDocumentForm);
     initAddDocumentModal();
-    initStatusDialog();
+    document.querySelectorAll('[data-record-dialog-trigger]').forEach(initRecordDialog);
 })();

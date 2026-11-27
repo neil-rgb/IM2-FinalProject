@@ -70,7 +70,8 @@ $notice = pull_flash() ?? ($notices[$noticeKey] ?? null);
     <title>B-TRACK / Staff Access</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/theme.css">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -81,29 +82,19 @@ $notice = pull_flash() ?? ($notices[$noticeKey] ?? null);
                     <span class="brand-mark" aria-hidden="true">BT</span>
                     <div>
                         <p class="brand-name">B-TRACK</p>
-                        <p class="brand-description">Barangay Document Management System</p>
+                        <p class="brand-description">Barangay records</p>
                     </div>
                 </div>
 
-                <div class="system-meta" aria-label="System information">
-                    <span>PORTAL / 01</span>
-                    <span class="system-status"><i aria-hidden="true"></i> SYSTEM ONLINE</span>
-                </div>
             </header>
 
             <div class="login-content">
-                <div class="section-label" aria-hidden="true">
-                    <span>[ ACCESS TERMINAL ]</span>
-                    <span>AUTH / SECURE</span>
-                </div>
-
                 <div class="intro">
-                    <h1 id="login-title">Sign in to continue</h1>
+                    <h1 id="login-title">Sign in</h1>
                 </div>
 
                 <?php if ($notice): ?>
                     <div class="notice notice--<?= htmlspecialchars($notice['type'], ENT_QUOTES, 'UTF-8') ?>" role="status">
-                        <span class="notice-code" aria-hidden="true">[!]</span>
                         <div>
                             <strong><?= htmlspecialchars($notice['title'], ENT_QUOTES, 'UTF-8') ?></strong>
                             <p><?= htmlspecialchars($notice['message'], ENT_QUOTES, 'UTF-8') ?></p>
@@ -113,7 +104,6 @@ $notice = pull_flash() ?? ($notices[$noticeKey] ?? null);
 
                 <?php if ($loginError !== ''): ?>
                     <div class="notice notice--error" role="alert">
-                        <span class="notice-code" aria-hidden="true">[!]</span>
                         <div><strong>Sign in failed</strong><p><?= e($loginError) ?></p></div>
                     </div>
                 <?php endif; ?>
@@ -128,7 +118,6 @@ $notice = pull_flash() ?? ($notices[$noticeKey] ?? null);
                     <div class="field-group">
                         <div class="field-heading">
                             <label for="username">Username <span aria-hidden="true">*</span></label>
-                            <span>USER ID</span>
                         </div>
                         <input
                             type="text"
@@ -147,7 +136,6 @@ $notice = pull_flash() ?? ($notices[$noticeKey] ?? null);
                     <div class="field-group">
                         <div class="field-heading">
                             <label for="password">Password <span aria-hidden="true">*</span></label>
-                            <span>PASS KEY</span>
                         </div>
                         <div class="password-field">
                             <input
@@ -185,13 +173,9 @@ $notice = pull_flash() ?? ($notices[$noticeKey] ?? null);
                 </form>
             </div>
 
-            <footer class="system-footer">
-                <span>DOCUMENT CONTROL / LOCAL OPERATIONS</span>
-                <span>VER. 01 / <?= date('Y') ?></span>
-            </footer>
         </section>
 
-        <p class="privacy-note">Use of this system is monitored and limited to authorized barangay personnel.</p>
+        <p class="privacy-note">For authorized barangay personnel.</p>
     </main>
 
     <script src="assets/js/app.js" defer></script>

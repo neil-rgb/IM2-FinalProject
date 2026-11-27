@@ -115,7 +115,8 @@ function field_error(array $errors, string $field): string
     <title>B-TRACK / Record Document</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/theme.css">
     <link rel="stylesheet" href="../assets/css/document-form.css">
 </head>
 <body class="document-page">
@@ -125,7 +126,7 @@ function field_error(array $errors, string $field): string
                 <span class="form-brand__mark" aria-hidden="true">BT</span>
                 <div>
                     <strong>B-TRACK</strong>
-                    <span>NEW DOCUMENT / ENTRY</span>
+                    <span>Barangay records</span>
                 </div>
             </div>
             <a class="close-form" href="index.php" aria-label="Close document form" title="Close">
@@ -136,7 +137,6 @@ function field_error(array $errors, string $field): string
         <div class="document-modal__body">
             <div class="form-intro">
                 <div>
-                    <span>DOCUMENT REGISTRY / CREATE</span>
                     <h1 id="document-form-title">Record document</h1>
                     <p>Enter the details from the incoming or outgoing document.</p>
                 </div>
@@ -163,7 +163,6 @@ function field_error(array $errors, string $field): string
 
                 <section class="form-section" aria-labelledby="document-information-title">
                     <div class="form-section__heading">
-                        <span>01</span>
                         <h2 id="document-information-title">Document information</h2>
                     </div>
 
@@ -218,7 +217,6 @@ function field_error(array $errors, string $field): string
 
                 <section class="form-section" aria-labelledby="routing-information-title">
                     <div class="form-section__heading">
-                        <span>02</span>
                         <h2 id="routing-information-title">Sender or recipient</h2>
                     </div>
 
@@ -239,7 +237,6 @@ function field_error(array $errors, string $field): string
 
                 <section class="form-section" aria-labelledby="processing-information-title">
                     <div class="form-section__heading">
-                        <span>03</span>
                         <h2 id="processing-information-title">Processing details</h2>
                     </div>
 

@@ -75,7 +75,8 @@ $notice = $notices[$noticeKey] ?? null;
     <title>B-TRACK / Create Account</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/theme.css">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -86,29 +87,19 @@ $notice = $notices[$noticeKey] ?? null;
                     <span class="brand-mark" aria-hidden="true">BT</span>
                     <div>
                         <p class="brand-name">B-TRACK</p>
-                        <p class="brand-description">Barangay Document Management System</p>
+                        <p class="brand-description">Barangay records</p>
                     </div>
                 </div>
 
-                <div class="system-meta" aria-label="System information">
-                    <span>PORTAL / 02</span>
-                    <span class="system-status"><i aria-hidden="true"></i> SECRETARY ACCESS</span>
-                </div>
             </header>
 
             <div class="login-content">
-                <div class="section-label" aria-hidden="true">
-                    <span>[ SECRETARY REGISTRY ]</span>
-                    <span>NEW / ACCOUNT</span>
-                </div>
-
                 <div class="intro">
                     <h1 id="register-title">Create account</h1>
                 </div>
 
                 <?php if ($notice): ?>
                     <div class="notice notice--<?= htmlspecialchars($notice['type'], ENT_QUOTES, 'UTF-8') ?>" role="status">
-                        <span class="notice-code" aria-hidden="true">[!]</span>
                         <div>
                             <strong><?= htmlspecialchars($notice['title'], ENT_QUOTES, 'UTF-8') ?></strong>
                             <p><?= htmlspecialchars($notice['message'], ENT_QUOTES, 'UTF-8') ?></p>
@@ -118,7 +109,6 @@ $notice = $notices[$noticeKey] ?? null;
 
                 <?php if ($registrationError !== ''): ?>
                     <div class="notice notice--error" role="alert">
-                        <span class="notice-code" aria-hidden="true">[!]</span>
                         <div><strong>Account not created</strong><p><?= e($registrationError) ?></p></div>
                     </div>
                 <?php endif; ?>
@@ -133,7 +123,6 @@ $notice = $notices[$noticeKey] ?? null;
                     <div class="field-group">
                         <div class="field-heading">
                             <label for="full_name">Full name <span aria-hidden="true">*</span></label>
-                            <span>STAFF NAME</span>
                         </div>
                         <input
                             type="text"
@@ -150,7 +139,6 @@ $notice = $notices[$noticeKey] ?? null;
                     <div class="field-group">
                         <div class="field-heading">
                             <label for="username">Username <span aria-hidden="true">*</span></label>
-                            <span>USER ID</span>
                         </div>
                         <input
                             type="text"
@@ -169,7 +157,6 @@ $notice = $notices[$noticeKey] ?? null;
                     <div class="field-group">
                         <div class="field-heading">
                             <label for="password">Password <span aria-hidden="true">*</span></label>
-                            <span>PASS KEY</span>
                         </div>
                         <div class="password-field">
                             <input
@@ -198,7 +185,6 @@ $notice = $notices[$noticeKey] ?? null;
                     <div class="field-group">
                         <div class="field-heading">
                             <label for="confirm_password">Confirm password <span aria-hidden="true">*</span></label>
-                            <span>VERIFY KEY</span>
                         </div>
                         <div class="password-field">
                             <input
@@ -238,13 +224,9 @@ $notice = $notices[$noticeKey] ?? null;
                 </form>
             </div>
 
-            <footer class="system-footer">
-                <span>ACCOUNT CONTROL / LOCAL OPERATIONS</span>
-                <span>VER. 01 / <?= date('Y') ?></span>
-            </footer>
         </section>
 
-        <p class="privacy-note">New accounts are intended only for authorized barangay secretaries.</p>
+        <p class="privacy-note">For authorized barangay secretaries.</p>
     </main>
 
     <script src="assets/js/app.js" defer></script>

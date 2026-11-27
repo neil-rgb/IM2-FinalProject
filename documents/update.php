@@ -3,18 +3,22 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_auth('../login.php');
+require_once __DIR__ . '/../includes/document-soft-copies.php';
 
 if (!is_post_request()) {
     redirect('index.php');
 }
 
-$documentId = filter_var($_POST['document_id'] ?? null, FILTER_VALIDATE_INT);
+$oversizedRequest = soft_copy_request_too_large();
+$documentId = filter_var($oversizedRequest ? query_value('id') : ($_POST['document_id'] ?? null), FILTER_VALIDATE_INT);
 if (!is_int($documentId) || $documentId < 1) {
     flash('error', 'Record not found', 'Return to the records list and open the document again.');
     redirect('index.php');
 }
 
-$editUrl = 'edit.php?id=' . $documentId;
+$recordQueryString = http_build_query(['id' => $documentId] + document_browse_query());
+$editUrl = 'edit.php?' . $recordQueryString;
+$recordUrl = 'view.php?' . $recordQueryString;
 $values = [
     'title' => post_value('title'),
     'category' => post_value('category'),
@@ -24,6 +28,15 @@ $values = [
     'location_id' => post_value('location_id'),
 ];
 $errors = [];
+
+if ($oversizedRequest) {
+    $_SESSION['_document_edit_draft'] = [
+        'document_id' => $documentId,
+        'values' => [],
+        'errors' => ['soft_copy' => 'Choose a file no larger than 10 MB. Your saved details are still available.'],
+    ];
+    redirect($editUrl, 303);
+}
 
 if (!verify_csrf_token(isset($_POST['_token']) && is_string($_POST['_token']) ? $_POST['_token'] : null)) {
     $errors['_form'] = 'This form expired. Review the details and save again.';
@@ -96,6 +109,18 @@ if ($errors === []) {
     }
 }
 
+$softCopy = null;
+if ($errors === []) {
+    try {
+        $softCopy = read_document_soft_copy_upload();
+        if ($softCopy !== null && !user_has_role('Secretary')) {
+            $errors['soft_copy'] = 'Only the barangay secretary can attach a soft copy.';
+        }
+    } catch (InvalidArgumentException $exception) {
+        $errors['soft_copy'] = $exception->getMessage();
+    }
+}
+
 if ($errors !== []) {
     $_SESSION['_document_edit_draft'] = [
         'document_id' => $documentId,
@@ -113,6 +138,8 @@ if (!is_int($userId) || $userId < 1) {
 }
 
 $connection = db();
+$newSoftCopyPath = null;
+$previousSoftCopyPath = null;
 try {
     $connection->beginTransaction();
 
@@ -138,6 +165,12 @@ try {
         $connection->rollBack();
         flash('error', 'Record not found', 'This document may have been removed from the database.');
         redirect('index.php');
+    }
+
+    if (document_is_recycled($connection, $documentId)) {
+        $connection->rollBack();
+        flash('error', 'Record in Recycle Bin', 'Restore this record before editing its details.');
+        redirect($recordUrl, 303);
     }
 
     $updateQuery = $connection->prepare(
@@ -170,12 +203,29 @@ try {
         $moveQuery->closeCursor();
     }
 
+    if ($softCopy !== null) {
+        $previousQuery = $connection->prepare('SELECT storage_key FROM Document_Soft_Copies WHERE document_id = ? FOR UPDATE');
+        $previousQuery->execute([$documentId]);
+        $previousKey = $previousQuery->fetchColumn();
+        $storageKey = bin2hex(random_bytes(20));
+        $newSoftCopyPath = stage_document_soft_copy($softCopy, $storageKey);
+        if (is_string($previousKey)) {
+            $previousSoftCopyPath = document_soft_copy_path($previousKey);
+        }
+        save_document_soft_copy($connection, $documentId, $storageKey, $softCopy);
+    }
     $connection->commit();
+    if ($previousSoftCopyPath !== null) {
+        remove_unused_soft_copy($previousSoftCopyPath);
+    }
     flash('success', 'Saved', 'Document details saved.');
-    redirect('view.php?id=' . $documentId);
-} catch (PDOException $exception) {
+    redirect($recordUrl, 303);
+} catch (RuntimeException $exception) {
     if ($connection->inTransaction()) {
         $connection->rollBack();
+        if ($newSoftCopyPath !== null) {
+            remove_unused_soft_copy($newSoftCopyPath);
+        }
     }
 
     error_log('B-TRACK document edit save error: ' . $exception->getMessage());
@@ -187,7 +237,7 @@ try {
     ];
     $formMessage = in_array($databaseMessage, $safeBusinessMessages, true)
         ? $databaseMessage
-        : 'The document could not be saved. Your changes are still available in the form; please try again.';
+        : 'The document could not be saved. Review your changes and choose the file again if you were attaching one.';
 
     $_SESSION['_document_edit_draft'] = [
         'document_id' => $documentId,

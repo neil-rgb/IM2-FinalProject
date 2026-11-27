@@ -76,6 +76,24 @@ CREATE TABLE Documents (
   FOREIGN KEY (recorded_by)  REFERENCES Users(user_id)
 ) AUTO_INCREMENT=1001;
 
+CREATE TABLE Document_Soft_Copies (
+  document_id INT PRIMARY KEY,
+  storage_key CHAR(40) NOT NULL UNIQUE,
+  file_name VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(32) NOT NULL,
+  file_size INT UNSIGNED NOT NULL,
+  FOREIGN KEY (document_id) REFERENCES Documents(document_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE Document_Recycle_Bin (
+  document_id INT PRIMARY KEY,
+  deleted_by  INT NOT NULL,
+  deleted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_recycle_bin_deleted_at (deleted_at, document_id),
+  FOREIGN KEY (document_id) REFERENCES Documents(document_id),
+  FOREIGN KEY (deleted_by)  REFERENCES Users(user_id)
+) ENGINE=InnoDB;
+
 CREATE TABLE Processing_History (
   history_id      INT AUTO_INCREMENT PRIMARY KEY,
   document_id     INT NOT NULL,
@@ -340,7 +358,8 @@ FROM Documents d
 JOIN Document_Types t     ON t.type_id = d.type_id
 JOIN Users u              ON u.user_id = d.recorded_by
 JOIN Storage_Locations l  ON l.location_id = d.location_id
-LEFT JOIN Committees c    ON c.committee_id = d.committee_id;
+LEFT JOIN Committees c    ON c.committee_id = d.committee_id
+WHERE NOT EXISTS (SELECT 1 FROM Document_Recycle_Bin b WHERE b.document_id = d.document_id);
 
 -- ---------------------------------------------------------------------
 -- 5. SAMPLE DATA

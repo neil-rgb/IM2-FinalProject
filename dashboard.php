@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_auth();
+require_once __DIR__ . '/includes/document-soft-copies.php';
 
 $activeUser = current_user();
 $profileValues = [
@@ -99,6 +100,9 @@ try {
     $storageLocations = [];
     $formErrors['_form'] = 'Could not load document types and storage locations from MySQL.';
 }
+if (is_post_request() && query_value('add') === '1' && soft_copy_request_too_large()) {
+    $formErrors['soft_copy'] = 'Choose a file no larger than 10 MB, then enter the document details again.';
+}
 if (is_post_request() && post_value('_action') === 'create_document') {
     $showAddModal = true;
     foreach (array_keys($formValues) as $field) {
@@ -135,9 +139,25 @@ if (is_post_request() && post_value('_action') === 'create_document') {
         $formErrors['location_id'] = 'Choose a storage location in the cabinet for the selected document type.';
     }
 
+    $softCopy = null;
     if ($formErrors === []) {
         try {
-            $statement = db()->prepare('CALL sp_add_document(?, ?, ?, NULL, ?, ?, ?, ?)');
+            $softCopy = read_document_soft_copy_upload();
+            if ($softCopy !== null && !user_has_role('Secretary')) {
+                $formErrors['soft_copy'] = 'Only the barangay secretary can attach a soft copy.';
+            }
+        } catch (InvalidArgumentException $exception) {
+            $formErrors['soft_copy'] = $exception->getMessage();
+        }
+    }
+
+    if ($formErrors === []) {
+        $connection = null;
+        $newSoftCopyPath = null;
+        try {
+            $connection = db();
+            $connection->beginTransaction();
+            $statement = $connection->prepare('CALL sp_add_document(?, ?, ?, NULL, ?, ?, ?, ?)');
             $statement->execute([
                 (int) $activeUser['id'],
                 $formValues['title'],
@@ -149,9 +169,21 @@ if (is_post_request() && post_value('_action') === 'create_document') {
             ]);
             $savedDocument = $statement->fetch();
             $statement->closeCursor();
+            if ($softCopy !== null) {
+                $storageKey = bin2hex(random_bytes(20));
+                $newSoftCopyPath = stage_document_soft_copy($softCopy, $storageKey);
+                save_document_soft_copy($connection, (int) $savedDocument['document_id'], $storageKey, $softCopy);
+            }
+            $connection->commit();
             flash('success', 'Document saved', ($savedDocument['tracking_number'] ?? 'Document') . ' was recorded as Pending.');
             redirect('dashboard.php');
-        } catch (PDOException $exception) {
+        } catch (RuntimeException $exception) {
+            if ($connection && $connection->inTransaction()) {
+                $connection->rollBack();
+                if ($newSoftCopyPath !== null) {
+                    remove_unused_soft_copy($newSoftCopyPath);
+                }
+            }
             error_log('B-TRACK dashboard document save error: ' . $exception->getMessage());
             $formErrors['_form'] = ($exception->errorInfo[0] ?? '') === '45000'
                 ? ($exception->errorInfo[2] ?? 'The database rejected the document.')
@@ -263,6 +295,7 @@ $viewQuery = array_intersect_key($_GET, array_flip(['search', 'year', 'status'])
 $querySuffix = $viewQuery === [] ? '' : '?' . http_build_query($viewQuery);
 $boardUrl = 'dashboard.php' . $querySuffix;
 $listUrl = 'documents/index.php' . $querySuffix;
+$breadcrumbItems = [['Overview']];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -274,6 +307,7 @@ $listUrl = 'documents/index.php' . $querySuffix;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/theme.css">
     <link rel="stylesheet" href="assets/css/dashboard.css">
 </head>
 <body<?= $profileEditorOpen ? ' class="sidebar-open"' : '' ?>>
@@ -289,155 +323,149 @@ $listUrl = 'documents/index.php' . $querySuffix;
                 </div>
             </div>
 
-            <form class="filters sidebar-filters" action="dashboard.php" method="get" role="search" data-search-filters>
-                <div class="search-control">
-                    <button class="search-submit" type="submit" aria-label="Search records" title="Search records">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg>
-                    </button>
-                    <label class="search-field">
-                        <span class="sr-only">Search by tracking number or title</span>
-                        <input type="search" name="search" value="<?= e($searchQuery) ?>" placeholder="Search">
-                    </label>
-                    <button class="filter-toggle" type="button" aria-label="Filters" title="Filters" aria-controls="search-filter-panel" aria-expanded="false" data-filter-toggle>
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 12h10m-7 5h4"></path></svg>
-                        <?php if ($activeFilterCount > 0): ?><span class="filter-count" aria-hidden="true"><?= $activeFilterCount ?></span><?php endif; ?>
-                    </button>
-                </div>
-                <div class="filter-popover" id="search-filter-panel" data-filter-panel hidden>
-                    <div class="filter-popover__heading">
-                        <span>FILTER SEARCH</span>
-                        <span><?= $activeFilterCount ?> ACTIVE</span>
-                    </div>
-                    <div class="filter-options">
-                        <label>
-                            <span>Year</span>
-                            <select name="year">
-                                <option value="">All years</option>
-                                <?php foreach ($allowedYears as $year): ?>
-                                    <option value="<?= $year ?>"<?= $selectedYear === $year ? ' selected' : '' ?>>Year / <?= $year ?></option>
-                                <?php endforeach; ?>
-                            </select>
+            <div class="sidebar-content">
+                <form class="filters sidebar-filters" action="dashboard.php" method="get" role="search" data-search-filters>
+                    <div class="search-control">
+                        <button class="search-submit" type="submit" aria-label="Search records" title="Search records">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg>
+                        </button>
+                        <label class="search-field">
+                            <span class="sr-only">Search by tracking number or title</span>
+                            <input type="search" name="search" value="<?= e($searchQuery) ?>" placeholder="Search">
                         </label>
-                        <label>
-                            <span>Status</span>
-                            <select name="status">
-                                <option value="">All statuses</option>
-                                <?php foreach ($allowedStatuses as $status): ?>
-                                    <option value="<?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>"<?= $selectedStatus === $status ? ' selected' : '' ?>><?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </label>
+                        <button class="filter-toggle" type="button" aria-label="Filters" title="Filters" aria-controls="search-filter-panel" aria-expanded="false" data-filter-toggle>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 12h10m-7 5h4"></path></svg>
+                            <?php if ($activeFilterCount > 0): ?><span class="filter-count" aria-hidden="true"><?= $activeFilterCount ?></span><?php endif; ?>
+                        </button>
                     </div>
-                    <div class="filter-actions">
-                        <a href="dashboard.php?year=" data-clear-filters>Clear filters</a>
-                        <button class="button button--primary" type="submit">Apply filters</button>
+                    <div class="filter-popover" id="search-filter-panel" data-filter-panel role="group" aria-label="Record filters" hidden>
+                        <div class="filter-options">
+                            <label>
+                                <span>Year</span>
+                                <select name="year">
+                                    <option value="">All years</option>
+                                    <?php foreach ($allowedYears as $year): ?>
+                                        <option value="<?= $year ?>"<?= $selectedYear === $year ? ' selected' : '' ?>><?= $year ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Status</span>
+                                <select name="status">
+                                    <option value="">All statuses</option>
+                                    <?php foreach ($allowedStatuses as $status): ?>
+                                        <option value="<?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>"<?= $selectedStatus === $status ? ' selected' : '' ?>><?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="filter-actions">
+                            <a href="dashboard.php?year=" data-clear-filters aria-label="Clear filters">Clear</a>
+                            <button class="button button--primary" type="submit" aria-label="Apply filters">Apply</button>
+                        </div>
                     </div>
-                </div>
-            </form>
-
-            <section class="sidebar-profile-editor" id="sidebar-profile-editor" aria-labelledby="sidebar-profile-title"<?= $profileEditorOpen ? '' : ' hidden' ?>>
-                <header class="sidebar-profile-editor__heading">
-                    <div>
-                        <span>OFFICE PROFILE</span>
-                        <h2 id="sidebar-profile-title">Barangay info</h2>
-                    </div>
-                    <button class="sidebar-profile-back" type="button" data-profile-back>Back</button>
-                </header>
-
-                <?php if ($profileSavedNotice): ?>
-                    <p class="sidebar-profile-success" role="status">Profile saved successfully.</p>
-                <?php endif; ?>
-
-                <?php if ($profileErrors !== []): ?>
-                    <div class="sidebar-profile-error" role="alert" tabindex="-1">
-                        <strong>Check these details</strong>
-                        <?php if (isset($profileErrors['_form'])): ?><span><?= e($profileErrors['_form']) ?></span><?php endif; ?>
-                        <?php foreach (['barangay_name' => 'Barangay name', 'location' => 'Location', 'office_address' => 'Office address', 'contact_number' => 'Contact number'] as $field => $label): ?>
-                            <?php if (isset($profileErrors[$field])): ?><a href="#profile-<?= e($field) ?>"><?= e($label) ?>: <?= e($profileErrors[$field]) ?></a><?php endif; ?>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-
-                <form class="sidebar-profile-form" action="dashboard.php?profile=1" method="post">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="_action" value="save_barangay_profile">
-
-                    <label class="sidebar-profile-field" for="profile-barangay_name">
-                        <span>Barangay name <b>*</b></span>
-                        <input id="profile-barangay_name" name="barangay_name" type="text" maxlength="150" required value="<?= e($profileValues['barangay_name']) ?>" aria-invalid="<?= isset($profileErrors['barangay_name']) ? 'true' : 'false' ?>">
-                        <?php if (isset($profileErrors['barangay_name'])): ?><small><?= e($profileErrors['barangay_name']) ?></small><?php endif; ?>
-                    </label>
-
-                    <label class="sidebar-profile-field" for="profile-location">
-                        <span>Location <b>*</b></span>
-                        <input id="profile-location" name="location" type="text" maxlength="180" placeholder="City / Municipality, Province" required value="<?= e($profileValues['location']) ?>" aria-invalid="<?= isset($profileErrors['location']) ? 'true' : 'false' ?>">
-                        <?php if (isset($profileErrors['location'])): ?><small><?= e($profileErrors['location']) ?></small><?php endif; ?>
-                    </label>
-
-                    <label class="sidebar-profile-field" for="profile-office_address">
-                        <span>Office address <b>*</b></span>
-                        <textarea id="profile-office_address" name="office_address" rows="2" maxlength="255" required aria-invalid="<?= isset($profileErrors['office_address']) ? 'true' : 'false' ?>"><?= e($profileValues['office_address']) ?></textarea>
-                        <?php if (isset($profileErrors['office_address'])): ?><small><?= e($profileErrors['office_address']) ?></small><?php endif; ?>
-                    </label>
-
-                    <label class="sidebar-profile-field" for="profile-contact_number">
-                        <span>Contact number <b>*</b></span>
-                        <input id="profile-contact_number" name="contact_number" type="tel" maxlength="40" autocomplete="tel" required value="<?= e($profileValues['contact_number']) ?>" aria-invalid="<?= isset($profileErrors['contact_number']) ? 'true' : 'false' ?>">
-                        <?php if (isset($profileErrors['contact_number'])): ?><small><?= e($profileErrors['contact_number']) ?></small><?php endif; ?>
-                    </label>
-
-                    <button class="sidebar-profile-save" type="submit">Save barangay info <span aria-hidden="true">-&gt;</span></button>
                 </form>
-            </section>
 
-            <p class="sidebar-menu-label">Menu</p>
-            <nav class="primary-nav" aria-label="Main navigation">
-                <a class="nav-link is-active" href="<?= e($boardUrl) ?>" aria-current="page">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
-                    <span>Cabinet board</span>
-                </a>
-                <a class="nav-link" href="<?= e($listUrl) ?>">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l5 5v13H5z"></path><path d="M15 3v6h5M8 13h8M8 17h8"></path></svg>
-                    <span>All records</span>
-                </a>
-                <button class="nav-link sidebar-profile-toggle<?= $profileEditorOpen ? ' is-active' : '' ?>" type="button" data-profile-toggle aria-controls="sidebar-profile-editor" aria-expanded="<?= $profileEditorOpen ? 'true' : 'false' ?>">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 10h1M14 10h1M9 14h1M14 14h1M11 21v-4h2v4"></path></svg>
-                    <span>Barangay info</span>
-                </button>
-            </nav>
+                <section class="sidebar-profile-editor" id="sidebar-profile-editor" aria-labelledby="sidebar-profile-title"<?= $profileEditorOpen ? '' : ' hidden' ?>>
+                    <header class="sidebar-profile-editor__heading">
+                        <div>
+                            <span>OFFICE PROFILE</span>
+                            <h2 id="sidebar-profile-title">Barangay info</h2>
+                        </div>
+                        <button class="sidebar-profile-back" type="button" data-profile-back>Back</button>
+                    </header>
 
-            <div class="operator-panel">
-                <span>SECRETARY</span>
-                <strong title="<?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?>"><?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?></strong>
+                    <?php if ($profileSavedNotice): ?>
+                        <p class="sidebar-profile-success" role="status">Profile saved successfully.</p>
+                    <?php endif; ?>
+
+                    <?php if ($profileErrors !== []): ?>
+                        <div class="sidebar-profile-error" role="alert" tabindex="-1">
+                            <strong>Check these details</strong>
+                            <?php if (isset($profileErrors['_form'])): ?><span><?= e($profileErrors['_form']) ?></span><?php endif; ?>
+                            <?php foreach (['barangay_name' => 'Barangay name', 'location' => 'Location', 'office_address' => 'Office address', 'contact_number' => 'Contact number'] as $field => $label): ?>
+                                <?php if (isset($profileErrors[$field])): ?><a href="#profile-<?= e($field) ?>"><?= e($label) ?>: <?= e($profileErrors[$field]) ?></a><?php endif; ?>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <form class="sidebar-profile-form" action="dashboard.php?profile=1" method="post">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="_action" value="save_barangay_profile">
+
+                        <label class="sidebar-profile-field" for="profile-barangay_name">
+                            <span>Barangay name <b>*</b></span>
+                            <input id="profile-barangay_name" name="barangay_name" type="text" maxlength="150" required value="<?= e($profileValues['barangay_name']) ?>" aria-invalid="<?= isset($profileErrors['barangay_name']) ? 'true' : 'false' ?>">
+                            <?php if (isset($profileErrors['barangay_name'])): ?><small><?= e($profileErrors['barangay_name']) ?></small><?php endif; ?>
+                        </label>
+
+                        <label class="sidebar-profile-field" for="profile-location">
+                            <span>Location <b>*</b></span>
+                            <input id="profile-location" name="location" type="text" maxlength="180" placeholder="City / Municipality, Province" required value="<?= e($profileValues['location']) ?>" aria-invalid="<?= isset($profileErrors['location']) ? 'true' : 'false' ?>">
+                            <?php if (isset($profileErrors['location'])): ?><small><?= e($profileErrors['location']) ?></small><?php endif; ?>
+                        </label>
+
+                        <label class="sidebar-profile-field" for="profile-office_address">
+                            <span>Office address <b>*</b></span>
+                            <textarea id="profile-office_address" name="office_address" rows="2" maxlength="255" required aria-invalid="<?= isset($profileErrors['office_address']) ? 'true' : 'false' ?>"><?= e($profileValues['office_address']) ?></textarea>
+                            <?php if (isset($profileErrors['office_address'])): ?><small><?= e($profileErrors['office_address']) ?></small><?php endif; ?>
+                        </label>
+
+                        <label class="sidebar-profile-field" for="profile-contact_number">
+                            <span>Contact number <b>*</b></span>
+                            <input id="profile-contact_number" name="contact_number" type="tel" maxlength="40" autocomplete="tel" required value="<?= e($profileValues['contact_number']) ?>" aria-invalid="<?= isset($profileErrors['contact_number']) ? 'true' : 'false' ?>">
+                            <?php if (isset($profileErrors['contact_number'])): ?><small><?= e($profileErrors['contact_number']) ?></small><?php endif; ?>
+                        </label>
+
+                        <button class="sidebar-profile-save" type="submit">Save barangay info <span aria-hidden="true">-&gt;</span></button>
+                    </form>
+                </section>
+
+                <p class="sidebar-menu-label">Menu</p>
+                <nav class="primary-nav" aria-label="Main navigation">
+                    <a class="nav-link" href="<?= e($listUrl) ?>">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l5 5v13H5z"></path><path d="M15 3v6h5M8 13h8M8 17h8"></path></svg>
+                        <span>All records</span>
+                    </a>
+                    <a class="nav-link" href="documents/inventory.php">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3zM3 7V5h7l2 2h9v2M8 14h8"></path></svg>
+                        <span>Folder inventory</span>
+                    </a>
+                    <button class="nav-link sidebar-profile-toggle<?= $profileEditorOpen ? ' is-active' : '' ?>" type="button" data-profile-toggle aria-controls="sidebar-profile-editor" aria-expanded="<?= $profileEditorOpen ? 'true' : 'false' ?>">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 10h1M14 10h1M9 14h1M14 14h1M11 21v-4h2v4"></path></svg>
+                        <span>Barangay info</span>
+                    </button>
+                </nav>
             </div>
 
-            <form class="sign-out" action="logout.php" method="post">
-                <?= csrf_field() ?>
-                <button type="submit">
-                    <span>Sign out</span>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"></path></svg>
-                </button>
-            </form>
+            <footer class="sidebar-footer">
+                <div class="operator-panel">
+                    <span>SECRETARY</span>
+                    <strong title="<?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?>"><?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?></strong>
+                </div>
+
+                <a class="nav-link sidebar-recycle-link" href="documents/recycle-bin.php">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"></path></svg>
+                    <span>Recycle Bin</span>
+                </a>
+
+                <form class="sign-out" action="logout.php" method="post">
+                    <?= csrf_field() ?>
+                    <button type="submit">
+                        <span>Sign out</span>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"></path></svg>
+                    </button>
+                </form>
+            </footer>
         </aside>
 
         <button class="sidebar-backdrop" type="button" data-sidebar-backdrop aria-label="Close navigation" tabindex="-1"<?= $profileEditorOpen ? '' : ' hidden' ?>></button>
 
         <main class="main-content" id="main-content">
             <div class="records-content">
-                <nav class="page-breadcrumb" aria-label="Breadcrumb">
-                    <svg class="page-breadcrumb__mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l5 5v13H5z"></path><path d="M15 3v6h5M8 13h8M8 17h8"></path></svg>
-                    <span aria-hidden="true">›</span><a href="dashboard.php">Board</a><span aria-hidden="true">›</span><strong aria-current="page">Overview</strong>
-                </nav>
-                <header class="system-bar">
-                    <div>
-                        <div class="topbar-brand" aria-label="B-TRACK">
-                            <span class="topbar-brand-mark" aria-hidden="true">BT</span>
-                            <span class="topbar-brand-name">B-TRACK</span>
-                        </div>
-                        <button class="menu-toggle" type="button" aria-label="Open navigation" data-sidebar-toggle aria-controls="app-sidebar" aria-expanded="<?= $profileEditorOpen ? 'true' : 'false' ?>">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                        </button>
-                    </div>
+                <header class="records-header">
+                    <?php require __DIR__ . '/includes/menu-button.php'; ?>
+                    <?php require __DIR__ . '/includes/breadcrumb.php'; ?>
                 </header>
 
                 <section class="page-heading" aria-labelledby="page-title">
@@ -497,7 +525,7 @@ $listUrl = 'documents/index.php' . $querySuffix;
                                     <?php else: ?>
                                         <?php foreach ($cabinet['documents'] as $document): ?>
                                             <a class="document-folder"
-                                               href="documents/view.php?id=<?= urlencode((string) $document['id']) ?>"
+                                               href="documents/view.php?<?= e(http_build_query(['id' => $document['id']] + $viewQuery)) ?>"
                                                aria-label="Open document <?= htmlspecialchars($document['title'], ENT_QUOTES, 'UTF-8') ?>, code <?= htmlspecialchars($document['tracking'], ENT_QUOTES, 'UTF-8') ?>">
                                                 <span class="document-code"><?= htmlspecialchars($document['tracking'], ENT_QUOTES, 'UTF-8') ?></span>
                                                 <h4 title="<?= e($document['title']) ?>"><?= e($document['title']) ?></h4>
@@ -525,16 +553,9 @@ $listUrl = 'documents/index.php' . $querySuffix;
             <?php endif; ?>
 
             <div class="document-modal-backdrop<?= $showAddModal ? ' is-open' : '' ?>" data-add-document-modal<?= $showAddModal ? '' : ' hidden' ?>>
-                <section class="document-modal" role="dialog" aria-modal="true" aria-labelledby="add-document-title" aria-describedby="add-document-description" tabindex="-1" data-add-document-dialog>
+                <section class="document-modal add-document-modal" role="dialog" aria-modal="true" aria-labelledby="add-document-title" tabindex="-1" data-add-document-dialog>
                     <header class="document-modal__header">
-                        <div class="modal-heading-lockup">
-                            <div class="modal-heading-meta">
-                                <span class="modal-kicker">DOCUMENT REGISTRY</span>
-                                <span class="modal-step">NEW / 01</span>
-                            </div>
-                            <h2 id="add-document-title">Record document</h2>
-                            <p id="add-document-description">Enter the details and choose its cabinet folder.</p>
-                        </div>
+                        <h2 id="add-document-title">Record document</h2>
                         <button class="modal-close" type="button" aria-label="Close form" data-add-document-close>
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"></path></svg>
                         </button>
@@ -547,89 +568,69 @@ $listUrl = 'documents/index.php' . $querySuffix;
                         </div>
                     <?php endif; ?>
 
-                    <form class="modal-document-form" action="dashboard.php" method="post" data-modal-document-form>
+                    <form class="modal-document-form" action="dashboard.php?add=1" method="post" enctype="multipart/form-data" data-document-form>
                         <?= csrf_field() ?>
                         <input type="hidden" name="_action" value="create_document">
 
-                        <section class="modal-form-section" aria-labelledby="modal-record-details-title">
-                            <header class="modal-section-heading">
-                                <span>01</span>
+                        <div class="document-fields-grid">
+                            <section class="record-detail-panel document-fields-panel" aria-labelledby="modal-record-details-title">
                                 <h3 id="modal-record-details-title">Document details</h3>
-                            </header>
-                            <div class="modal-form-grid">
-                            <label class="modal-field modal-field--wide">
-                                <span>Document title <b>*</b></span>
-                                <input name="title" type="text" maxlength="150" required value="<?= e($formValues['title']) ?>" aria-invalid="<?= isset($formErrors['title']) ? 'true' : 'false' ?>">
-                                <?php if (isset($formErrors['title'])): ?><small><?= e($formErrors['title']) ?></small><?php endif; ?>
-                            </label>
+                                <div class="modal-form-grid">
+                                    <label class="modal-field modal-field--wide">
+                                        <span>Document title <b>*</b></span>
+                                        <input name="title" type="text" maxlength="150" required value="<?= e($formValues['title']) ?>" aria-invalid="<?= isset($formErrors['title']) ? 'true' : 'false' ?>">
+                                        <?php if (isset($formErrors['title'])): ?><small><?= e($formErrors['title']) ?></small><?php endif; ?>
+                                    </label>
 
-                            <label class="modal-field">
-                                <span>Document type <b>*</b></span>
-                                <select name="type_id" required aria-invalid="<?= isset($formErrors['type_id']) ? 'true' : 'false' ?>" data-modal-type>
-                                    <option value="">Select type</option>
-                                    <?php foreach ($documentTypes as $type): ?>
-                                        <option value="<?= e($type['type_id']) ?>"<?= $formValues['type_id'] === (string) $type['type_id'] ? ' selected' : '' ?>><?= e($type['type_name']) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <?php if (isset($formErrors['type_id'])): ?><small><?= e($formErrors['type_id']) ?></small><?php endif; ?>
-                            </label>
+                                    <label class="modal-field">
+                                        <span>Document category <b>*</b></span>
+                                        <select name="type_id" required aria-invalid="<?= isset($formErrors['type_id']) ? 'true' : 'false' ?>">
+                                            <option value="">Select category</option>
+                                            <?php foreach ($documentTypes as $type): ?>
+                                                <option value="<?= e($type['type_id']) ?>"<?= $formValues['type_id'] === (string) $type['type_id'] ? ' selected' : '' ?>><?= e($type['type_name']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <?php if (isset($formErrors['type_id'])): ?><small><?= e($formErrors['type_id']) ?></small><?php endif; ?>
+                                    </label>
 
-                            <label class="modal-field">
-                                <span>Direction <b>*</b></span>
-                                <select name="direction" required data-modal-direction aria-invalid="<?= isset($formErrors['direction']) ? 'true' : 'false' ?>">
-                                    <option value="">Select direction</option>
-                                    <option<?= $formValues['direction'] === 'Incoming' ? ' selected' : '' ?>>Incoming</option>
-                                    <option<?= $formValues['direction'] === 'Outgoing' ? ' selected' : '' ?>>Outgoing</option>
-                                </select>
-                                <?php if (isset($formErrors['direction'])): ?><small><?= e($formErrors['direction']) ?></small><?php endif; ?>
-                            </label>
+                                    <label class="modal-field">
+                                        <span>Direction <b>*</b></span>
+                                        <select name="direction" required data-direction-select aria-invalid="<?= isset($formErrors['direction']) ? 'true' : 'false' ?>">
+                                            <option value="">Select direction</option>
+                                            <option<?= $formValues['direction'] === 'Incoming' ? ' selected' : '' ?>>Incoming</option>
+                                            <option<?= $formValues['direction'] === 'Outgoing' ? ' selected' : '' ?>>Outgoing</option>
+                                        </select>
+                                        <?php if (isset($formErrors['direction'])): ?><small><?= e($formErrors['direction']) ?></small><?php endif; ?>
+                                    </label>
 
-                            <label class="modal-field">
-                                <span data-modal-party-label><?= $formValues['direction'] === 'Incoming' ? 'Received from / Sender' : ($formValues['direction'] === 'Outgoing' ? 'Sent to / Recipient' : 'Sender / Recipient') ?> <b>*</b></span>
-                                <input name="sender_recipient" type="text" maxlength="100" required value="<?= e($formValues['sender_recipient']) ?>" aria-invalid="<?= isset($formErrors['sender_recipient']) ? 'true' : 'false' ?>">
-                                <?php if (isset($formErrors['sender_recipient'])): ?><small><?= e($formErrors['sender_recipient']) ?></small><?php endif; ?>
-                            </label>
+                                    <label class="modal-field">
+                                        <span data-party-label><?= $formValues['direction'] === 'Incoming' ? 'Received from / Sender' : ($formValues['direction'] === 'Outgoing' ? 'Sent to / Recipient' : 'Sender / Recipient') ?> <b>*</b></span>
+                                        <input name="sender_recipient" type="text" maxlength="100" required value="<?= e($formValues['sender_recipient']) ?>" aria-invalid="<?= isset($formErrors['sender_recipient']) ? 'true' : 'false' ?>">
+                                        <?php if (isset($formErrors['sender_recipient'])): ?><small><?= e($formErrors['sender_recipient']) ?></small><?php endif; ?>
+                                    </label>
 
-                            <label class="modal-field">
-                                <span data-modal-date-label><?= $formValues['direction'] === 'Incoming' ? 'Date received' : ($formValues['direction'] === 'Outgoing' ? 'Date released' : 'Date received / released') ?> <b>*</b></span>
-                                <input name="date_received" type="date" max="<?= e(date('Y-m-d')) ?>" required value="<?= e($formValues['date_received']) ?>" aria-invalid="<?= isset($formErrors['date_received']) ? 'true' : 'false' ?>">
-                                <?php if (isset($formErrors['date_received'])): ?><small><?= e($formErrors['date_received']) ?></small><?php endif; ?>
-                            </label>
-                            </div>
-                        </section>
-
-                        <section class="modal-form-section" aria-labelledby="modal-location-title">
-                            <header class="modal-section-heading">
-                                <span>02</span>
-                                <h3 id="modal-location-title">Storage location</h3>
-                            </header>
-                            <fieldset class="modal-field modal-field--wide modal-location-field" data-location-group aria-invalid="<?= isset($formErrors['location_id']) ? 'true' : 'false' ?>">
-                                <legend>Choose one folder <b>*</b></legend>
-                                <div class="storage-choice-list" data-location-choices>
-                                    <?php foreach ($storageLocations as $location): ?>
-                                        <?php
-                                        $locationTypeId = (string) $location['type_id'];
-                                        ?>
-                                        <label class="storage-choice" data-storage-choice<?= $locationTypeId !== $formValues['type_id'] ? ' hidden' : '' ?>>
-                                            <input type="radio" name="location_id" value="<?= e($location['location_id']) ?>" data-location-choice data-type-id="<?= e($locationTypeId) ?>" required aria-invalid="<?= isset($formErrors['location_id']) ? 'true' : 'false' ?>"<?= $formValues['type_id'] === '' ? ' disabled' : '' ?><?= $formValues['location_id'] === (string) $location['location_id'] ? ' checked' : '' ?>>
-                                            <span class="storage-choice__path"><?= e($location['cabinet']) ?> / <?= e($location['drawer']) ?> / <?= e($location['folder']) ?></span>
-                                        </label>
-                                    <?php endforeach; ?>
+                                    <label class="modal-field">
+                                        <span data-transaction-label><?= $formValues['direction'] === 'Incoming' ? 'Date received' : ($formValues['direction'] === 'Outgoing' ? 'Date released' : 'Document date') ?> <b>*</b></span>
+                                        <input name="date_received" type="date" max="<?= e(date('Y-m-d')) ?>" required value="<?= e($formValues['date_received']) ?>" aria-invalid="<?= isset($formErrors['date_received']) ? 'true' : 'false' ?>">
+                                        <?php if (isset($formErrors['date_received'])): ?><small><?= e($formErrors['date_received']) ?></small><?php endif; ?>
+                                    </label>
                                 </div>
-                                <small class="modal-field__hint" data-location-empty<?= $formValues['type_id'] !== '' ? ' hidden' : '' ?>>Choose a document category to display matching folders.</small>
-                                <?php if (isset($formErrors['location_id'])): ?><small><?= e($formErrors['location_id']) ?></small><?php endif; ?>
-                            </fieldset>
-                        </section>
+                            </section>
 
-                        <div class="modal-form-meta">
-                            <span>RECORDED BY <strong><?= e($activeUser['full_name'] ?? 'Secretary') ?></strong></span>
-                            <span>INITIAL STATUS <strong>PENDING</strong></span>
-                            <span>DATE RECORDED <strong><?= e(date('M d, Y')) ?></strong></span>
+                            <section class="record-detail-panel document-fields-panel" aria-labelledby="modal-location-title">
+                                <h3 id="modal-location-title">Paper filing</h3>
+                                <?php
+                                $folderFieldId = 'add-location';
+                                $folderTypeId = $formValues['type_id'];
+                                require __DIR__ . '/includes/document-folder-field.php';
+                                require __DIR__ . '/includes/soft-copy-field.php';
+                                ?>
+                            </section>
                         </div>
 
                         <footer class="modal-form-actions">
-                            <button class="modal-cancel" type="button" data-add-document-close>Cancel</button>
-                            <button class="modal-save" type="submit"><span>Save document</span><span aria-hidden="true">-&gt;</span></button>
+                            <button class="button button--secondary" type="button" data-add-document-close>Cancel</button>
+                            <button class="button button--primary" type="submit" data-document-submit><span data-submit-label>Save document</span></button>
                         </footer>
                     </form>
                 </section>
