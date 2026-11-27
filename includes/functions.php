@@ -98,6 +98,15 @@ function status_slug(string $status): string
     return trim($slug, '-');
 }
 
+function next_document_status(string $status): ?string
+{
+    return match ($status) {
+        'Pending' => 'In Process',
+        'In Process' => 'Completed',
+        default => null,
+    };
+}
+
 /** Read document rows in the shape shared by the cabinet and list views. */
 function fetch_documents(): array
 {

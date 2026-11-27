@@ -1,0 +1,31 @@
+:root {
+    --workspace-surface: #fbfaf6;
+    --rail-surface: #f1f0e9;
+    --lane-surface: #efede5;
+    --surface-rule: #e3e0d6;
+    --control-fill: #e8e6de;
+    --control-radius: 0.5rem;
+    --panel-radius: 0.8rem;
+    --canvas: var(--workspace-surface);
+    --paper: var(--workspace-surface);
+    --ink: #17182d;
+    --folder: var(--ink);
+    --accent-blue: var(--ink);
+    --button-height: 2.75rem;
+    --button-padding-inline: 0.875rem;
+    --button-primary-hover: #2b2d49;
+    --metal: #dad8d0;
+    --muted-ink: #565852;
+    --rule: #c5c5bd;
+    --rule-strong: #888a82;
+    --error: #9b3128;
+    --success: #2f6145;
+    --warning: #765a1d;
+    --focus: var(--accent-blue);
+    --typeface: "Geist", "Segoe UI", Arial, sans-serif;
+    --font-title: 1.5rem;
+    --font-emphasis: 1rem;
+    --font-body: 0.875rem;
+    --font-small: 0.75rem;
+    --motion-fast: 160ms ease;
+}

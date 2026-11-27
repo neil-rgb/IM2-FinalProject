@@ -259,8 +259,8 @@ function field_error(array $errors, string $field): string
                 </section>
 
                 <footer class="form-actions">
-                    <a href="index.php">Cancel</a>
-                    <button type="submit" data-document-submit>
+                    <a class="button button--secondary" href="index.php">Cancel</a>
+                    <button class="button button--primary" type="submit" data-document-submit>
                         <span data-submit-label>Save document</span>
                         <span aria-hidden="true">-&gt;</span>
                     </button>

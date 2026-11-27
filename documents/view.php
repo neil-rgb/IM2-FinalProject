@@ -43,6 +43,25 @@ if (!$document && !$loadError) {
 
 $statusClass = $document ? status_slug((string) $document['status']) : '';
 $notice = pull_flash();
+$nextStatus = $document && user_has_role('Secretary')
+    ? next_document_status((string) $document['status'])
+    : null;
+$recordUrl = $document ? 'view.php?id=' . (int) $document['id'] : '';
+$statusDraft = null;
+$staleStatusDraft = false;
+$savedStatusDraft = $_SESSION['_document_status_draft'] ?? null;
+if ($document && is_array($savedStatusDraft) && $savedStatusDraft['document_id'] === (int) $document['id']) {
+    unset($_SESSION['_document_status_draft']);
+    if ($savedStatusDraft['status'] === $document['status']) {
+        $statusDraft = $savedStatusDraft;
+    } else {
+        $staleStatusDraft = true;
+        $notice = ['type' => 'error', 'message' => 'The status changed. Review the record before continuing.'];
+    }
+}
+$showStatusForm = $nextStatus !== null && !$staleStatusDraft
+    && ($statusDraft !== null || query_value('change-status') === '1');
+$invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -77,8 +96,11 @@ $notice = pull_flash();
                 <p class="record-detail-eyebrow">DOCUMENT RECORD / <?= e($document['tracking']) ?></p>
                 <div class="record-detail-heading__actions">
                     <span class="record-status record-status--<?= e($statusClass) ?>"><?= e($document['status']) ?></span>
+                    <?php if ($nextStatus !== null): ?>
+                        <a class="button button--secondary" href="<?= e($recordUrl . '&change-status=1') ?>" aria-haspopup="dialog" data-status-open>Change status</a>
+                    <?php endif; ?>
                     <nav class="record-detail-navigation" aria-label="Record navigation">
-                        <a class="button button--primary record-detail-back" href="index.php">All records</a>
+                        <a class="button button--secondary record-detail-back" href="index.php">All records</a>
                         <a class="record-dashboard-exit" href="../dashboard.php" aria-label="Return to dashboard" title="Return to dashboard">
                             <svg class="record-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                 <path fill-rule="evenodd" d="M9.53 2.47a.75.75 0 0 1 0 1.06L4.81 8.25H15a6.75 6.75 0 0 1 0 13.5h-3a.75.75 0 0 1 0-1.5h3a5.25 5.25 0 1 0 0-10.5H4.81l4.72 4.72a.75.75 0 1 1-1.06 1.06l-6-6a.75.75 0 0 1 0-1.06l6-6a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
@@ -95,6 +117,46 @@ $notice = pull_flash();
                     </a>
                 </div>
             </section>
+
+            <?php if ($nextStatus !== null): ?>
+                <dialog class="record-status-dialog" aria-labelledby="status-dialog-title" aria-describedby="status-dialog-description" data-status-dialog<?= $showStatusForm ? ' open' : '' ?>>
+                    <header class="document-modal__header">
+                        <div>
+                            <h2 id="status-dialog-title">Change document status</h2>
+                            <p id="status-dialog-description">The change and your remark will be saved in processing history.</p>
+                        </div>
+                    </header>
+                    <form class="record-status-form" action="status.php" method="post">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="document_id" value="<?= e($document['id']) ?>">
+                        <input type="hidden" name="current_status" value="<?= e($document['status']) ?>">
+
+                        <div class="record-status-transition">
+                            <span class="record-status record-status--<?= e($statusClass) ?>"><span class="sr-only">Current status: </span><?= e($document['status']) ?></span>
+                            <span aria-hidden="true">→</span>
+                            <span class="record-status record-status--<?= e(status_slug($nextStatus)) ?>"><span class="sr-only">Next status: </span><?= e($nextStatus) ?></span>
+                        </div>
+
+                        <?php if ($statusDraft && !$invalidRemarks): ?>
+                            <p class="record-status-error" role="alert"><?= e($statusDraft['message']) ?></p>
+                        <?php endif; ?>
+
+                        <label class="modal-field" for="status-remarks">
+                            <span>Remarks <b aria-hidden="true">*</b></span>
+                            <textarea id="status-remarks" name="remarks" rows="3" maxlength="255" required autofocus aria-describedby="status-remarks-hint<?= $invalidRemarks ? ' status-remarks-error' : '' ?>"<?= $invalidRemarks ? ' aria-invalid="true"' : '' ?>><?= e($statusDraft['remarks'] ?? '') ?></textarea>
+                            <small id="status-remarks-hint" class="modal-field__hint">Briefly explain the change, up to 255 characters.</small>
+                            <?php if ($invalidRemarks): ?>
+                                <small id="status-remarks-error" role="alert"><?= e($statusDraft['message']) ?></small>
+                            <?php endif; ?>
+                        </label>
+
+                        <div class="form-actions">
+                            <a class="button button--secondary" href="<?= e($recordUrl) ?>" data-status-cancel>Cancel</a>
+                            <button class="button button--primary" type="submit">Confirm status change</button>
+                        </div>
+                    </form>
+                </dialog>
+            <?php endif; ?>
 
             <section class="record-detail-cover" aria-labelledby="record-title">
                 <span class="folder-tab" aria-hidden="true"></span>
@@ -178,5 +240,6 @@ $notice = pull_flash();
             </section>
         <?php endif; ?>
     </main>
+    <script src="../assets/js/app.js" defer></script>
 </body>
 </html>
