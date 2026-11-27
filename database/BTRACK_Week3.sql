@@ -45,10 +45,12 @@ CREATE TABLE Document_Types (
 
 CREATE TABLE Storage_Locations (
   location_id INT AUTO_INCREMENT PRIMARY KEY,
+  type_id     INT NOT NULL,
   cabinet     VARCHAR(30) NOT NULL,
   drawer      VARCHAR(30) NOT NULL,
   folder      VARCHAR(30) NOT NULL,
-  CONSTRAINT uq_location UNIQUE (cabinet, drawer, folder)
+  CONSTRAINT uq_location UNIQUE (cabinet, drawer, folder),
+  FOREIGN KEY (type_id) REFERENCES Document_Types(type_id)
 ) AUTO_INCREMENT=501;
 
 CREATE TABLE Documents (
@@ -221,10 +223,12 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only Active accounts can record or update documents.';
   ELSEIF p_date_received > CURDATE() THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Date received cannot be a future date.';
-  ELSEIF NOT EXISTS (SELECT 1 FROM Storage_Locations WHERE location_id = p_location_id) THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Storage location not found.';
   ELSEIF NOT EXISTS (SELECT 1 FROM Document_Types WHERE type_id = p_type_id) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Document type not found.';
+  ELSEIF NOT EXISTS (
+    SELECT 1 FROM Storage_Locations WHERE location_id = p_location_id AND type_id = p_type_id
+  ) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Choose a storage location inside the cabinet for this document category.';
   ELSEIF p_committee_id IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM Committees WHERE committee_id = p_committee_id) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Committee not found.';
@@ -284,11 +288,12 @@ CREATE PROCEDURE sp_move_document (
 BEGIN
   DECLARE v_ustatus VARCHAR(10);
   DECLARE v_old INT;
+  DECLARE v_type_id INT;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN SET @current_user_id = NULL; SET @action_remarks = NULL; RESIGNAL; END;
 
   SELECT status INTO v_ustatus FROM Users WHERE user_id = p_user_id;
-  SELECT location_id INTO v_old FROM Documents WHERE document_id = p_document_id;
+  SELECT location_id, type_id INTO v_old, v_type_id FROM Documents WHERE document_id = p_document_id;
 
   IF v_old IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Document not found.';
@@ -296,8 +301,10 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'User not found.';
   ELSEIF v_ustatus <> 'Active' THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only Active accounts can record or update documents.';
-  ELSEIF NOT EXISTS (SELECT 1 FROM Storage_Locations WHERE location_id = p_location_id) THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Storage location not found.';
+  ELSEIF NOT EXISTS (
+    SELECT 1 FROM Storage_Locations WHERE location_id = p_location_id AND type_id = v_type_id
+  ) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Choose a storage location inside the cabinet for this document category.';
   ELSEIF v_old = p_location_id THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Document is already in that location.';
   END IF;
@@ -350,21 +357,23 @@ INSERT INTO Document_Types (type_id, type_name, is_financial) VALUES
  (401,'Finance', TRUE),(402,'Resolutions', FALSE),(403,'Requests & Endorsements', FALSE),
  (404,'Notices & Communications', FALSE),(405,'Administrative Records', FALSE);
 
-INSERT INTO Storage_Locations (location_id, cabinet, drawer, folder) VALUES
- (501,'Cabinet A','Drawer 1','Folder 001'),(502,'Cabinet A','Drawer 1','Folder 002'),
- (503,'Cabinet A','Drawer 2','Folder 001'),(504,'Cabinet B','Drawer 1','Folder 001'),
- (505,'Cabinet B','Drawer 1','Folder 002'),(506,'Cabinet B','Drawer 2','Folder 001');
+INSERT INTO Storage_Locations (location_id, type_id, cabinet, drawer, folder) VALUES
+ (501,401,'Cabinet 01','Drawer 1','Folder 001'),(502,401,'Cabinet 01','Drawer 1','Folder 002'),(503,401,'Cabinet 01','Drawer 2','Folder 001'),
+ (504,402,'Cabinet 02','Drawer 1','Folder 001'),(505,402,'Cabinet 02','Drawer 1','Folder 002'),(506,402,'Cabinet 02','Drawer 2','Folder 001'),
+ (507,403,'Cabinet 03','Drawer 1','Folder 001'),(508,403,'Cabinet 03','Drawer 1','Folder 002'),(509,403,'Cabinet 03','Drawer 2','Folder 001'),
+ (510,404,'Cabinet 04','Drawer 1','Folder 001'),(511,404,'Cabinet 04','Drawer 1','Folder 002'),(512,404,'Cabinet 04','Drawer 2','Folder 001'),
+ (513,405,'Cabinet 05','Drawer 1','Folder 001'),(514,405,'Cabinet 05','Drawer 1','Folder 002'),(515,405,'Cabinet 05','Drawer 2','Folder 001');
 
 -- Documents inserted directly (the AFTER INSERT trigger writes the first history rows)
 INSERT INTO Documents (document_id, tracking_number, title, type_id, committee_id, direction, sender_recipient, date_received, status, location_id, recorded_by) VALUES
- (1001,'DOC-2026-001','Request for Barangay Clearance - J. Ramos', 403, NULL, 'Incoming','Juan Ramos',            '2026-11-03','Pending', 501, 301),
- (1002,'DOC-2026-002','Endorsement of Scholarship Applicants',     403, NULL, 'Outgoing','Municipal Mayor Office','2026-11-04','Pending', 502, 301),
- (1003,'DOC-2026-003','Notice of Barangay Assembly',               404, 202,  'Outgoing','All Residents',        '2026-11-05','Pending', 501, 301),
- (1004,'DOC-2026-004','October 2026 Collections Report',           401, 201,  'Outgoing','Municipal Treasurer',  '2026-11-05','Pending', 504, 302),
+ (1001,'DOC-2026-001','Request for Barangay Clearance - J. Ramos', 403, NULL, 'Incoming','Juan Ramos',            '2026-11-03','Pending', 507, 301),
+ (1002,'DOC-2026-002','Endorsement of Scholarship Applicants',     403, NULL, 'Outgoing','Municipal Mayor Office','2026-11-04','Pending', 508, 301),
+ (1003,'DOC-2026-003','Notice of Barangay Assembly',               404, 202,  'Outgoing','All Residents',        '2026-11-05','Pending', 510, 301),
+ (1004,'DOC-2026-004','October 2026 Collections Report',           401, 201,  'Outgoing','Municipal Treasurer',  '2026-11-05','Pending', 501, 302),
  (1005,'DOC-2026-005','Resolution on Drainage Improvement',        402, 204,  'Incoming','Sangguniang Barangay', '2026-11-10','Pending', 505, 301),
- (1006,'DOC-2026-006','Request for Medical Mission Support',       403, 203,  'Incoming','Rural Health Unit',    '2026-11-10','Pending', 503, 301),
- (1007,'DOC-2026-007','Q3 2026 Statement of Expenditures',         401, 201,  'Outgoing','COA Municipal Office', '2026-11-12','Pending', 504, 302),
- (1008,'DOC-2026-008','Barangay Employee Records Update',          405, NULL, 'Incoming','Municipal HR',         '2026-11-17','Pending', 506, 301);
+ (1006,'DOC-2026-006','Request for Medical Mission Support',       403, 203,  'Incoming','Rural Health Unit',    '2026-11-10','Pending', 509, 301),
+ (1007,'DOC-2026-007','Q3 2026 Statement of Expenditures',         401, 201,  'Outgoing','COA Municipal Office', '2026-11-12','Pending', 503, 302),
+ (1008,'DOC-2026-008','Barangay Employee Records Update',          405, NULL, 'Incoming','Municipal HR',         '2026-11-17','Pending', 515, 301);
 
 -- Status/location changes go through the stored procedures (validated + logged by trigger)
 -- Arguments: document_id, new_status | new_location_id, user_id, remarks
@@ -375,7 +384,7 @@ CALL sp_update_document_status(1003, 'In Process', 302, 'For posting');
 CALL sp_update_document_status(1003, 'Completed',  302, 'Notice posted and released');
 CALL sp_update_document_status(1004, 'In Process', 302, 'Waiting for Captain signature');
 CALL sp_update_document_status(1005, 'In Process', 301, 'For committee review');
-CALL sp_move_document(1002, 503, 301, 'Refiled to Cabinet A, Drawer 2');
+CALL sp_move_document(1002, 509, 301, 'Refiled to Cabinet 03, Drawer 2');
 
 -- =====================================================================
 -- 6. FIVE SQL QUERIES  (screenshot each statement + output)

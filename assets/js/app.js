@@ -289,12 +289,101 @@
         });
     };
 
+    const initStorageLocationSelect = (root, typeSelector, locationSelector) => {
+        const typeSelect = root.querySelector(typeSelector);
+        const locationControl = root.querySelector(locationSelector);
+
+        if (!typeSelect || !locationControl) {
+            return;
+        }
+
+        if (locationControl instanceof HTMLInputElement && locationControl.type === 'radio') {
+            const locationChoices = Array.from(root.querySelectorAll(`${locationSelector}[data-location-choice]`));
+            const locationGroup = root.querySelector('[data-location-group]');
+            const emptyState = root.querySelector('[data-location-empty]');
+
+            const updateLocationChoices = () => {
+                const selectedTypeId = typeSelect.value;
+                let matchingCount = 0;
+
+                locationChoices.forEach((choice) => {
+                    const matchesType = selectedTypeId !== '' && choice.dataset.typeId === selectedTypeId;
+                    const label = choice.closest('[data-storage-choice]');
+
+                    if (choice.checked && !matchesType) {
+                        choice.checked = false;
+                    }
+
+                    choice.disabled = !matchesType;
+                    if (label) {
+                        label.hidden = !matchesType;
+                    }
+                    if (matchesType) {
+                        matchingCount += 1;
+                    }
+                });
+
+                if (emptyState) {
+                    emptyState.hidden = selectedTypeId !== '' && matchingCount > 0;
+                    emptyState.textContent = selectedTypeId === ''
+                        ? 'Choose a document category to display matching folders.'
+                        : 'No storage folders are configured for this category.';
+                }
+            };
+
+            locationChoices.forEach((choice) => {
+                choice.addEventListener('change', () => {
+                    if (!choice.checked) {
+                        return;
+                    }
+
+                    locationGroup?.setAttribute('aria-invalid', 'false');
+                    locationChoices.forEach((locationChoice) => locationChoice.setAttribute('aria-invalid', 'false'));
+                });
+            });
+
+            typeSelect.addEventListener('change', updateLocationChoices);
+            updateLocationChoices();
+            return;
+        }
+
+        const locationSelect = locationControl;
+        if (!(locationSelect instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        const placeholder = locationSelect.options[0];
+        const updateLocations = () => {
+            const selectedTypeId = typeSelect.value;
+
+            if (locationSelect.value && locationSelect.selectedOptions[0]?.dataset.typeId !== selectedTypeId) {
+                locationSelect.value = '';
+            }
+
+            locationSelect.disabled = selectedTypeId === '';
+            placeholder.textContent = selectedTypeId === ''
+                ? 'Select document type first'
+                : 'Select cabinet / drawer / folder';
+
+            Array.from(locationSelect.options).slice(1).forEach((option) => {
+                const matchesType = selectedTypeId !== '' && option.dataset.typeId === selectedTypeId;
+                option.hidden = !matchesType;
+                option.disabled = !matchesType;
+            });
+        };
+
+        typeSelect.addEventListener('change', updateLocations);
+        updateLocations();
+    };
+
     const initDocumentForm = () => {
         const form = document.querySelector('[data-document-form]');
 
         if (!form) {
             return;
         }
+
+        initStorageLocationSelect(form, '[name="category"]', '[name="location_id"]');
 
         const direction = form.querySelector('[data-direction-select]');
         const partyLabel = form.querySelector('[data-party-label]');
@@ -345,6 +434,8 @@
         if (!modal || !dialog || !openButton) {
             return;
         }
+
+        initStorageLocationSelect(modal, '[name="type_id"]', '[name="location_id"]');
 
         const closeButtons = modal.querySelectorAll('[data-add-document-close]');
         const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';

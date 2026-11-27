@@ -91,7 +91,7 @@ if (is_post_request() && post_value('_action') === 'save_barangay_profile') {
 try {
     $documentTypes = db()->query('SELECT type_id, type_name FROM Document_Types ORDER BY type_name')->fetchAll();
     $storageLocations = db()->query(
-        'SELECT location_id, cabinet, drawer, folder FROM Storage_Locations ORDER BY cabinet, drawer, folder'
+        'SELECT location_id, type_id, cabinet, drawer, folder FROM Storage_Locations WHERE type_id IS NOT NULL ORDER BY type_id, cabinet, drawer, folder'
     )->fetchAll();
 } catch (PDOException $exception) {
     error_log('B-TRACK dashboard form options error: ' . $exception->getMessage());
@@ -99,7 +99,6 @@ try {
     $storageLocations = [];
     $formErrors['_form'] = 'Could not load document types and storage locations from MySQL.';
 }
-
 if (is_post_request() && post_value('_action') === 'create_document') {
     $showAddModal = true;
     foreach (array_keys($formValues) as $field) {
@@ -126,8 +125,14 @@ if (is_post_request() && post_value('_action') === 'create_document') {
     if (!$receivedDate || $receivedDate->format('Y-m-d') !== $formValues['date_received'] || $formValues['date_received'] > date('Y-m-d')) {
         $formErrors['date_received'] = 'Choose a valid date that is not in the future.';
     }
-    if (!in_array($formValues['location_id'], array_map(static fn (array $location): string => (string) $location['location_id'], $storageLocations), true)) {
-        $formErrors['location_id'] = 'Select where the original paper document is stored.';
+    $validLocationIdsForType = [];
+    foreach ($storageLocations as $location) {
+        if ((string) $location['type_id'] === $formValues['type_id']) {
+            $validLocationIdsForType[] = (string) $location['location_id'];
+        }
+    }
+    if (!in_array($formValues['location_id'], $validLocationIdsForType, true)) {
+        $formErrors['location_id'] = 'Choose a storage location in the cabinet for the selected document type.';
     }
 
     if ($formErrors === []) {
@@ -512,10 +517,13 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
             <div class="document-modal-backdrop<?= $showAddModal ? ' is-open' : '' ?>" data-add-document-modal<?= $showAddModal ? '' : ' hidden' ?>>
                 <section class="document-modal" role="dialog" aria-modal="true" aria-labelledby="add-document-title" aria-describedby="add-document-description" tabindex="-1" data-add-document-dialog>
                     <header class="document-modal__header">
-                        <div>
-                            <span class="modal-kicker">DOCUMENT REGISTRY / NEW ENTRY</span>
+                        <div class="modal-heading-lockup">
+                            <div class="modal-heading-meta">
+                                <span class="modal-kicker">DOCUMENT REGISTRY</span>
+                                <span class="modal-step">NEW / 01</span>
+                            </div>
                             <h2 id="add-document-title">Record document</h2>
-                            <p id="add-document-description">Enter the details and storage location for this record.</p>
+                            <p id="add-document-description">Enter the details and choose its cabinet folder.</p>
                         </div>
                         <button class="modal-close" type="button" aria-label="Close form" data-add-document-close>
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"></path></svg>
@@ -533,7 +541,12 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
                         <?= csrf_field() ?>
                         <input type="hidden" name="_action" value="create_document">
 
-                        <div class="modal-form-grid">
+                        <section class="modal-form-section" aria-labelledby="modal-record-details-title">
+                            <header class="modal-section-heading">
+                                <span>01</span>
+                                <h3 id="modal-record-details-title">Document details</h3>
+                            </header>
+                            <div class="modal-form-grid">
                             <label class="modal-field modal-field--wide">
                                 <span>Document title <b>*</b></span>
                                 <input name="title" type="text" maxlength="150" required value="<?= e($formValues['title']) ?>" aria-invalid="<?= isset($formErrors['title']) ? 'true' : 'false' ?>">
@@ -542,7 +555,7 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
 
                             <label class="modal-field">
                                 <span>Document type <b>*</b></span>
-                                <select name="type_id" required aria-invalid="<?= isset($formErrors['type_id']) ? 'true' : 'false' ?>">
+                                <select name="type_id" required aria-invalid="<?= isset($formErrors['type_id']) ? 'true' : 'false' ?>" data-modal-type>
                                     <option value="">Select type</option>
                                     <?php foreach ($documentTypes as $type): ?>
                                         <option value="<?= e($type['type_id']) ?>"<?= $formValues['type_id'] === (string) $type['type_id'] ? ' selected' : '' ?>><?= e($type['type_name']) ?></option>
@@ -572,19 +585,31 @@ $activeFilterCount = ($searchQuery !== '' ? 1 : 0)
                                 <input name="date_received" type="date" max="<?= e(date('Y-m-d')) ?>" required value="<?= e($formValues['date_received']) ?>" aria-invalid="<?= isset($formErrors['date_received']) ? 'true' : 'false' ?>">
                                 <?php if (isset($formErrors['date_received'])): ?><small><?= e($formErrors['date_received']) ?></small><?php endif; ?>
                             </label>
+                            </div>
+                        </section>
 
-                            <label class="modal-field modal-field--wide">
-                                <span>Original paper location <b>*</b></span>
-                                <select name="location_id" required aria-invalid="<?= isset($formErrors['location_id']) ? 'true' : 'false' ?>">
-                                    <option value="">Select cabinet / drawer / folder</option>
+                        <section class="modal-form-section" aria-labelledby="modal-location-title">
+                            <header class="modal-section-heading">
+                                <span>02</span>
+                                <h3 id="modal-location-title">Storage location</h3>
+                            </header>
+                            <fieldset class="modal-field modal-field--wide modal-location-field" data-location-group aria-invalid="<?= isset($formErrors['location_id']) ? 'true' : 'false' ?>">
+                                <legend>Choose one folder <b>*</b></legend>
+                                <div class="storage-choice-list" data-location-choices>
                                     <?php foreach ($storageLocations as $location): ?>
-                                        <?php $locationLabel = $location['cabinet'] . ' / ' . $location['drawer'] . ' / ' . $location['folder']; ?>
-                                        <option value="<?= e($location['location_id']) ?>"<?= $formValues['location_id'] === (string) $location['location_id'] ? ' selected' : '' ?>><?= e($locationLabel) ?></option>
+                                        <?php
+                                        $locationTypeId = (string) $location['type_id'];
+                                        ?>
+                                        <label class="storage-choice" data-storage-choice<?= $locationTypeId !== $formValues['type_id'] ? ' hidden' : '' ?>>
+                                            <input type="radio" name="location_id" value="<?= e($location['location_id']) ?>" data-location-choice data-type-id="<?= e($locationTypeId) ?>" required aria-invalid="<?= isset($formErrors['location_id']) ? 'true' : 'false' ?>"<?= $formValues['type_id'] === '' ? ' disabled' : '' ?><?= $formValues['location_id'] === (string) $location['location_id'] ? ' checked' : '' ?>>
+                                            <span class="storage-choice__path"><?= e($location['cabinet']) ?> / <?= e($location['drawer']) ?> / <?= e($location['folder']) ?></span>
+                                        </label>
                                     <?php endforeach; ?>
-                                </select>
+                                </div>
+                                <small class="modal-field__hint" data-location-empty<?= $formValues['type_id'] !== '' ? ' hidden' : '' ?>>Choose a document category to display matching folders.</small>
                                 <?php if (isset($formErrors['location_id'])): ?><small><?= e($formErrors['location_id']) ?></small><?php endif; ?>
-                            </label>
-                        </div>
+                            </fieldset>
+                        </section>
 
                         <div class="modal-form-meta">
                             <span>RECORDED BY <strong><?= e($activeUser['full_name'] ?? 'Secretary') ?></strong></span>
