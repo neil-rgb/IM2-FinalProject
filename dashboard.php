@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_auth();
+require __DIR__ . '/includes/react-shell.php';
 require_once __DIR__ . '/includes/document-soft-copies.php';
 
 $activeUser = current_user();
@@ -192,6 +193,12 @@ if (is_post_request() && post_value('_action') === 'create_document') {
     }
 }
 
+if (($_SERVER['HTTP_X_BTRACK_REACT'] ?? '') === '1' && is_post_request()) {
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(['ok' => false, 'errors' => $profileEditorOpen ? $profileErrors : $formErrors]);
+    exit;
+}
+
 $cabinets = [
     [
         'code' => 'CABINET 01',
@@ -308,7 +315,9 @@ $breadcrumbItems = [['Overview']];
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/theme.css">
+    <script src="assets/js/page-transition.js" defer blocking="render"></script>
     <link rel="stylesheet" href="assets/css/dashboard.css">
+    <link rel="stylesheet" href="assets/css/ui-system.css">
 </head>
 <body<?= $profileEditorOpen ? ' class="sidebar-open"' : '' ?>>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -435,6 +444,10 @@ $breadcrumbItems = [['Overview']];
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 10h1M14 10h1M9 14h1M14 14h1M11 21v-4h2v4"></path></svg>
                         <span>Barangay info</span>
                     </button>
+                    <a class="nav-link" href="documents/recycle-bin.php">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"></path></svg>
+                        <span>Recycle Bin</span>
+                    </a>
                 </nav>
             </div>
 
@@ -443,11 +456,6 @@ $breadcrumbItems = [['Overview']];
                     <span>SECRETARY</span>
                     <strong title="<?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?>"><?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?></strong>
                 </div>
-
-                <a class="nav-link sidebar-recycle-link" href="documents/recycle-bin.php">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"></path></svg>
-                    <span>Recycle Bin</span>
-                </a>
 
                 <form class="sign-out" action="logout.php" method="post">
                     <?= csrf_field() ?>

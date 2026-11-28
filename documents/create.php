@@ -117,7 +117,9 @@ function field_error(array $errors, string $field): string
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/theme.css">
+    <script src="../assets/js/page-transition.js" defer blocking="render"></script>
     <link rel="stylesheet" href="../assets/css/document-form.css">
+    <link rel="stylesheet" href="../assets/css/ui-system.css">
 </head>
 <body class="document-page">
     <main class="document-modal" aria-labelledby="document-form-title">
@@ -206,7 +208,7 @@ function field_error(array $errors, string $field): string
                             <select id="location_id" name="location_id" required data-error-message="Select a storage location." aria-describedby="location_id-error" aria-invalid="<?= isset($errors['location_id']) ? 'true' : 'false' ?>">
                                 <option value="">Select cabinet, drawer, and folder</option>
                                 <?php foreach ($locations as $location): ?>
-                                    <?php $locationLabel = $location['cabinet'] . ' / ' . $location['drawer'] . ' / ' . $location['folder']; ?>
+                                    <?php $locationLabel = storage_location_code($location['cabinet'], $location['drawer'], $location['folder']); ?>
                                     <option value="<?= e($location['location_id']) ?>"<?= $values['location_id'] === (string) $location['location_id'] ? ' selected' : '' ?>><?= e($locationLabel) ?></option>
                                 <?php endforeach; ?>
                             </select>

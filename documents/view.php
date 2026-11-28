@@ -7,6 +7,8 @@ require_auth('../login.php');
 $documentId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 $document = null;
 $loadError = false;
+$processingHistory = [];
+$historyLoadError = false;
 
 if (is_int($documentId) && $documentId > 0) {
     try {
@@ -19,7 +21,9 @@ if (is_int($documentId) && $documentId > 0) {
                     d.sender_recipient AS party_name,
                     d.date_received,
                     d.status,
-                    CONCAT_WS(" / ", l.cabinet, l.drawer, l.folder) AS storage_location,
+                    l.cabinet,
+                    l.drawer,
+                    l.folder,
                     d.created_at AS recorded_at,
                     u.full_name AS recorded_by,
                     b.deleted_at,
@@ -43,6 +47,23 @@ if (is_int($documentId) && $documentId > 0) {
 
 if (!$document && !$loadError) {
     http_response_code(404);
+}
+
+if ($document) {
+    try {
+        $historyStatement = db()->prepare(
+            'SELECT h.action_date, h.action_type, h.remarks, h.new_status, u.full_name AS handled_by_name
+             FROM Processing_History h
+             JOIN Users u ON u.user_id = h.handled_by
+             WHERE h.document_id = :document_id
+             ORDER BY h.action_date DESC, h.history_id DESC'
+        );
+        $historyStatement->execute(['document_id' => $document['id']]);
+        $processingHistory = $historyStatement->fetchAll();
+    } catch (PDOException $exception) {
+        error_log('B-TRACK processing history load error: ' . $exception->getMessage());
+        $historyLoadError = true;
+    }
 }
 
 $statusClass = $document ? status_slug((string) $document['status']) : '';
@@ -89,11 +110,13 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/theme.css">
+    <script src="../assets/js/page-transition.js" defer blocking="render"></script>
     <link rel="stylesheet" href="../assets/css/dashboard.css">
+    <link rel="stylesheet" href="../assets/css/ui-system.css">
 </head>
 <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <div class="app-shell records-workspace">
+    <div class="app-shell records-workspace document-record-page">
         <?php require dirname(__DIR__) . '/includes/document-sidebar.php'; ?>
 
         <main class="main-content" id="main-content">
@@ -110,17 +133,17 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
                 <?php endif; ?>
 
                 <?php if ($document): ?>
-                    <header class="record-detail-heading">
+                    <header class="record-detail-heading record-page-heading">
                         <div class="record-detail-title">
                             <h1 id="record-title"><?= e($document['title']) ?></h1>
                             <div class="record-detail-meta">
                                 <strong class="record-detail-code"><?= e($document['tracking']) ?></strong>
                                 <span>Recorded <time datetime="<?= e(str_replace(' ', 'T', $document['recorded_at'])) ?>"><?= e($document['recorded_at']) ?></time></span>
-                                <span class="record-status record-status--<?= e($statusClass) ?>"><?= e($document['status']) ?></span>
                                 <?php if ($isRecycled): ?><span>In Recycle Bin</span><?php endif; ?>
                             </div>
                         </div>
                         <div class="record-detail-heading__actions" role="group" aria-label="Record actions">
+                            <span class="record-status record-status--<?= e($statusClass) ?>"><?= e($document['status']) ?></span>
                             <?php if ($nextStatus !== null): ?>
                                 <a class="button button--secondary" href="<?= e($recordUrl . '&change-status=1') ?>" aria-haspopup="dialog" aria-controls="record-status-dialog" data-record-dialog-trigger>Change status</a>
                             <?php endif; ?>
@@ -144,7 +167,7 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
                     </header>
 
                     <?php if ($nextStatus !== null): ?>
-                        <dialog class="record-status-dialog" id="record-status-dialog" aria-labelledby="status-dialog-title" aria-describedby="status-dialog-description"<?= $showStatusForm ? ' open' : '' ?>>
+                        <dialog class="record-status-dialog popup-panel popup-panel--confirmation" id="record-status-dialog" aria-labelledby="status-dialog-title" aria-describedby="status-dialog-description"<?= $showStatusForm ? ' open' : '' ?>>
                             <header class="document-modal__header">
                                 <div>
                                     <h2 id="status-dialog-title">Change document status</h2>
@@ -153,6 +176,7 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
                                         <?php if ($nextStatus === 'Completed'): ?>Completed is final.<?php endif; ?>
                                     </p>
                                 </div>
+                                <a class="popup-close" href="<?= e($recordUrl) ?>" aria-label="Close dialog" data-record-dialog-cancel><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></a>
                             </header>
                             <form class="record-status-form" action="status.php<?= e($browseSuffix) ?>" method="post">
                                 <?= csrf_field() ?>
@@ -187,12 +211,13 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
                     <?php endif; ?>
 
                     <?php if ($canMoveToBin): ?>
-                        <dialog class="record-status-dialog" id="move-to-bin-dialog" aria-labelledby="move-to-bin-title" aria-describedby="move-to-bin-description"<?= $showRecycleForm ? ' open' : '' ?>>
+                        <dialog class="record-status-dialog popup-panel popup-panel--confirmation" id="move-to-bin-dialog" aria-labelledby="move-to-bin-title" aria-describedby="move-to-bin-description"<?= $showRecycleForm ? ' open' : '' ?>>
                             <header class="document-modal__header">
                                 <div>
                                     <h2 id="move-to-bin-title">Move record to Recycle Bin?</h2>
                                     <p id="move-to-bin-description"><?= e($document['tracking']) ?> will leave active records. You can restore it from the Recycle Bin.</p>
                                 </div>
+                                <a class="popup-close" href="<?= e($recordUrl) ?>" aria-label="Close dialog" data-record-dialog-cancel><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></a>
                             </header>
                             <form class="record-status-form" action="recycle-bin.php<?= e($browseSuffix) ?>" method="post">
                                 <?= csrf_field() ?>
@@ -226,11 +251,11 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
                                 <h2 id="record-correspondence-title">Correspondence</h2>
                                 <dl>
                                     <div>
-                                        <dt>Sender / recipient</dt>
+                                        <dt><?= $document['direction'] === 'Incoming' ? 'Received from' : 'Sent to' ?></dt>
                                         <dd><?= e($document['party_name']) ?></dd>
                                     </div>
                                     <div>
-                                        <dt>Date received / released</dt>
+                                        <dt><?= $document['direction'] === 'Incoming' ? 'Date received' : 'Date released' ?></dt>
                                         <dd><time datetime="<?= e($document['date_received']) ?>"><?= e($document['date_received']) ?></time></dd>
                                     </div>
                                 </dl>
@@ -244,7 +269,7 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
                                 <dl>
                                     <div>
                                         <dt>Original paper location</dt>
-                                        <dd><?= e($document['storage_location']) ?></dd>
+                                        <dd><?= e(storage_location_code($document['cabinet'], $document['drawer'], $document['folder'])) ?></dd>
                                     </div>
                                     <div>
                                         <dt>Recorded by</dt>
@@ -259,6 +284,7 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
                                     <div class="record-soft-copy__details">
                                         <div>
                                             <p><?= e($document['soft_copy_name'] ?? 'No soft copy attached') ?></p>
+                                            <?php if (!$isRecycled && $document['soft_copy_name'] === null): ?><p class="record-soft-copy-hint">You can attach a file in Edit details.</p><?php endif; ?>
                                             <?php if ($isRecycled && $document['soft_copy_name'] !== null): ?>
                                                 <p>Restore this record to open the file.</p>
                                             <?php endif; ?>
@@ -274,6 +300,31 @@ $invalidRemarks = $statusDraft['invalid_remarks'] ?? false;
                             <?php endif; ?>
                         </section>
                     </div>
+                    <details class="record-history" <?= $historyLoadError ? 'open' : '' ?>>
+                        <summary><span>Processing history</span><span class="record-history-count"><?= $historyLoadError ? 'Unavailable' : count($processingHistory) . ' ' . (count($processingHistory) === 1 ? 'entry' : 'entries') ?></span></summary>
+                        <?php if ($historyLoadError): ?>
+                            <p role="alert">History could not be loaded. Refresh the page to try again.</p>
+                        <?php elseif ($processingHistory === []): ?>
+                            <p>No processing history recorded yet.</p>
+                        <?php else: ?>
+                            <div class="record-table-wrap" role="region" aria-label="Document processing history" tabindex="0">
+                                <table class="record-table record-history-table">
+                                    <caption class="sr-only">Read-only processing history, newest first</caption>
+                                    <thead><tr><th scope="col">Date</th><th scope="col">Action</th><th scope="col">Handled by</th><th scope="col">Details</th></tr></thead>
+                                    <tbody>
+                                        <?php foreach ($processingHistory as $entry): ?>
+                                            <tr>
+                                                <td data-label="Date"><time datetime="<?= e(str_replace(' ', 'T', $entry['action_date'])) ?>"><?= e($entry['action_date']) ?></time></td>
+                                                <td data-label="Action"><?= e($entry['action_type']) ?></td>
+                                                <td data-label="Handled by"><?= e($entry['handled_by_name']) ?></td>
+                                                <td data-label="Details"><?= e($entry['remarks'] ?? '') ?><?= ($entry['new_status'] ?? '') !== '' ? ' · ' . e($entry['new_status']) : '' ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </details>
                 <?php else: ?>
                     <section class="record-not-found" aria-labelledby="record-title">
                         <p class="record-detail-eyebrow">DOCUMENT RECORD</p>

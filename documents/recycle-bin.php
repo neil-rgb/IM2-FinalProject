@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_auth('../login.php');
+require __DIR__ . '/../includes/react-shell.php';
 
 $canManage = user_has_role('Secretary');
 $browseQuery = document_browse_query();
@@ -64,7 +65,9 @@ if (is_post_request()) {
             ? $tracking . ' moved to the Recycle Bin.'
             : $tracking . ' restored to active records.';
         flash('success', $moveToBin ? 'Moved to Recycle Bin' : 'Record restored', $message);
-        redirect('recycle-bin.php', 303);
+        $browseParents = document_breadcrumb_parents($browseQuery);
+        $browseReturnUrl = $browseParents[array_key_last($browseParents)][1];
+        redirect($moveToBin ? $browseReturnUrl : 'recycle-bin.php', 303);
     } catch (DomainException | PDOException $exception) {
         if ($connection && $connection->inTransaction()) {
             $connection->rollBack();
@@ -115,7 +118,9 @@ $breadcrumbItems = [['Overview', '../dashboard.php' . $browseSuffix], ['Recycle 
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/theme.css">
+    <script src="../assets/js/page-transition.js" defer blocking="render"></script>
     <link rel="stylesheet" href="../assets/css/dashboard.css">
+    <link rel="stylesheet" href="../assets/css/ui-system.css">
 </head>
 <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>

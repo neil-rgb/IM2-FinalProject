@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_auth('../login.php');
+require __DIR__ . '/../includes/react-shell.php';
 require_once __DIR__ . '/../includes/document-soft-copies.php';
 
 $documentId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
@@ -93,7 +94,9 @@ $currentSoftCopyName = $document['soft_copy_name'] ?? null;
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/theme.css">
+    <script src="../assets/js/page-transition.js" defer blocking="render"></script>
     <link rel="stylesheet" href="../assets/css/dashboard.css">
+    <link rel="stylesheet" href="../assets/css/ui-system.css">
 </head>
 <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>

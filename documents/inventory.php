@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_auth('../login.php');
+require __DIR__ . '/../includes/react-shell.php';
 
 $locations = [];
 $records = [];
@@ -58,7 +59,7 @@ if (!user_has_role('Secretary')) {
 
 $inventoryPageActive = true;
 $breadcrumbItems = [['Overview', '../dashboard.php'], ['Folder inventory']];
-$path = $location ? implode(' / ', [$location['cabinet'], $location['drawer'], $location['folder']]) : '';
+$path = $location ? storage_location_code($location['cabinet'], $location['drawer'], $location['folder']) : '';
 $generated = new DateTimeImmutable();
 $inventoryReady = $location !== null && $error === '';
 ?>
@@ -72,7 +73,9 @@ $inventoryReady = $location !== null && $error === '';
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/theme.css">
+    <script src="../assets/js/page-transition.js" defer blocking="render"></script>
     <link rel="stylesheet" href="../assets/css/dashboard.css">
+    <link rel="stylesheet" href="../assets/css/ui-system.css">
 </head>
 <body class="folder-inventory-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -113,7 +116,7 @@ $inventoryReady = $location !== null && $error === '';
                             <select name="location_id" required data-inventory-folder>
                                 <option value="">Choose a folder</option>
                                 <?php foreach ($locations as $id => $folder): ?>
-                                    <option value="<?= e($id) ?>" data-cabinet="<?= e($folder['cabinet']) ?>" data-drawer="<?= e($folder['drawer']) ?>" data-folder="<?= e($folder['folder']) ?>"<?= $id === $locationId ? ' selected' : '' ?>><?= e(implode(' / ', [$folder['cabinet'], $folder['drawer'], $folder['folder']])) ?></option>
+                                    <option value="<?= e($id) ?>" data-cabinet="<?= e($folder['cabinet']) ?>" data-drawer="<?= e($folder['drawer']) ?>" data-folder="<?= e($folder['folder']) ?>"<?= $id === $locationId ? ' selected' : '' ?>><?= e(storage_location_code($folder['cabinet'], $folder['drawer'], $folder['folder'])) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </label>

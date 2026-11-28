@@ -65,6 +65,12 @@ function logout_user(): void
 function require_auth(string $loginPath = 'login.php'): void
 {
     if (!is_authenticated()) {
+        if (($_SERVER['HTTP_X_BTRACK_REACT'] ?? '') === '1') {
+            http_response_code(401);
+            header('Content-Type: application/json; charset=UTF-8');
+            echo json_encode(['message' => 'Sign in to continue.']);
+            exit;
+        }
         redirect($loginPath . '?notice=unauthorized');
     }
 }

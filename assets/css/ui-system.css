@@ -1,0 +1,203 @@
+/* Final shared role rules. Keep dense record text at the requested 12px scale. */
+@media screen {
+    body { font-size: var(--font-body); line-height: var(--leading-body); }
+    :is(.records-workspace, .auth-card) h1,
+    .records-workspace .record-page-heading .record-detail-title h1 {
+        font-size: var(--font-title);
+        line-height: var(--leading-title);
+        font-weight: 600;
+    }
+    .records-workspace :is(.record-detail-group h2, .document-entry-sections h2, .inventory-result-heading h2, .sidebar-profile-editor__heading h2, .react-history h2),
+    .records-workspace .popup-panel .document-modal__header h2 {
+        font-size: var(--font-emphasis);
+        line-height: var(--leading-label);
+        font-weight: 600;
+    }
+    .records-workspace .page-breadcrumb,
+    .records-workspace :is(.record-detail-meta, .record-status, .cabinet-number, .cabinet-count, .react-result-count, .sidebar-menu-label),
+    .records-workspace :is(.react-details dt, .record-detail-group dt) {
+        font-size: var(--font-small);
+        line-height: var(--leading-body);
+    }
+    .records-workspace :is(.react-details dd, .record-detail-group dd),
+    .records-workspace .nav-link {
+        font-size: var(--font-body);
+        line-height: var(--leading-body);
+    }
+    .records-workspace .record-table :is(th, td, .record-title),
+    .records-workspace .document-folder :is(h4, .document-code, .document-recorded) {
+        font-size: var(--font-small);
+        line-height: var(--leading-body);
+    }
+    .records-workspace .document-folder h4 { font-weight: 600; }
+    :is(.records-workspace, .auth-card) :is(.modal-field, .sidebar-profile-field, .field) {
+        gap: var(--field-gap);
+    }
+    .records-workspace :is(.modal-field > span, .sidebar-profile-field > span),
+    .auth-card .field > :is(span, label) {
+        font-size: var(--font-small);
+        line-height: var(--leading-label);
+        font-weight: 500;
+    }
+    :is(.records-workspace, .auth-card) :is(.modal-field, .sidebar-profile-field, .field) :is(input:not([type="file"]), select, textarea) {
+        font-family: inherit;
+        font-size: var(--font-body);
+        line-height: var(--leading-label);
+        min-height: var(--field-height);
+        padding: var(--space-2) var(--space-3);
+    }
+    .auth-card .react-password input { padding-right: 2.75rem; }
+    .records-workspace :is(.modal-field small, .sidebar-profile-field small, .document-entry-hint),
+    .auth-card .field small { font-size: var(--font-small); line-height: var(--leading-body); }
+    .records-workspace :is(.modal-form-grid, .sidebar-profile-form > fieldset),
+    .auth-card .login-form fieldset {
+        gap: var(--form-gap);
+    }
+    .records-workspace .record-detail-panel,
+    .records-workspace .react-form.document-entry-form--edit,
+    .auth-card .login-content { padding: var(--panel-padding); }
+    .records-workspace .document-edit-panel { padding: 0; }
+    .records-workspace .popup-panel :is(.react-form, .record-status-form) { padding: var(--panel-padding); }
+    .records-workspace .popup-panel .document-modal__header { padding: var(--space-3) var(--space-4); }
+    .records-workspace .form-actions {
+        gap: var(--space-2);
+        margin-top: var(--space-3);
+        padding-top: var(--space-3);
+    }
+    .records-workspace .popup-panel .record-status-form:not(:has(.modal-field)) .form-actions {
+        margin-top: 0;
+        padding-top: 0;
+    }
+    .records-workspace :is(.records-toolbar, .record-detail-heading__actions, .form-actions, .inventory-controls) .button,
+    .records-workspace .popup-panel .form-actions .button,
+    .records-workspace .sidebar-profile-form .form-actions button,
+    .auth-card .submit-button {
+        min-height: var(--field-height);
+        padding: var(--space-2) var(--space-3);
+        font-size: var(--font-body);
+        line-height: var(--leading-label);
+        font-weight: 600;
+    }
+    .records-workspace .records-toolbar { gap: var(--space-3); margin-bottom: 1.25rem; }
+    .records-workspace .dashboard-tabs a {
+        min-height: calc(var(--field-height) - 0.4rem);
+        font-size: var(--font-body);
+        line-height: var(--leading-label);
+    }
+    .records-workspace .record-detail-heading { gap: var(--space-3); }
+    .records-workspace :is(.document-entry-sections, .record-detail-columns) { gap: var(--space-4); }
+    .records-workspace .record-detail-group { gap: var(--space-2); padding-block: var(--space-3); }
+    .records-workspace .record-detail-group dl { gap: var(--space-3); }
+    .records-workspace .inventory-controls { gap: var(--space-3); }
+    .records-workspace .document-entry-form--edit .document-entry-sections { gap: var(--space-6); }
+    .auth-card .system-header { padding: var(--space-3) var(--space-4); }
+    .auth-card .intro { margin-bottom: var(--space-4); }
+    .auth-card .react-auth-link { margin: var(--space-1) 0; }
+    .records-workspace :is(.inventory-page-heading, .recycle-list-heading, .document-edit-heading, .record-page-heading) {
+        padding-top: 1.75rem;
+        padding-bottom: var(--space-6);
+    }
+}
+@media screen and (max-height: 40rem) {
+    .auth-card .login-form fieldset { gap: var(--space-2); }
+}
+
+/* Document reading layout shares the same panel and type roles. */
+.document-record-page .record-detail-panel > .record-detail-group:first-child { padding-top: 0; }
+.document-record-page .record-detail-panel > .record-detail-group:last-child { padding-bottom: 0; }
+.document-record-page .record-detail-group dl > div { gap: var(--space-1); }
+.document-record-page .record-soft-copy-hint {
+    margin-top: var(--space-1);
+    font-size: var(--font-small);
+    line-height: var(--leading-body);
+}
+.document-record-page .record-soft-copy__actions .button {
+    min-height: var(--field-height);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-body);
+}
+.record-history { margin-top: var(--space-4); }
+.record-history summary {
+    display: list-item;
+    padding-block: var(--space-2);
+    color: var(--ink);
+    font-size: var(--font-emphasis);
+    font-weight: 600;
+    cursor: pointer;
+}
+.record-history summary::marker { font-size: var(--font-small); color: var(--muted-ink); }
+.record-history-count {
+    margin-left: var(--space-3);
+    color: var(--muted-ink);
+    font-size: var(--font-small);
+    font-weight: 400;
+}
+.record-history summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--control-radius); }
+.record-history > p { margin: 0 0 var(--space-3); font-size: var(--font-body); color: var(--muted-ink); }
+.records-workspace .record-history-table { min-width: 43rem; }
+.records-workspace .record-history-table :is(th, td) { padding: var(--space-2) var(--space-3); white-space: normal; vertical-align: top; line-height: var(--leading-body); overflow-wrap: anywhere; }
+.records-workspace .record-history-table th:nth-child(1) { width: 12rem; }
+.records-workspace .record-history-table th:nth-child(2) { width: 18%; }
+.records-workspace .record-history-table th:nth-child(3) { width: 24%; }
+.records-workspace .record-history-table th:nth-child(4) { width: auto; }
+.records-workspace .record-history-table tbody td:first-child {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.records-workspace .record-history-table tbody td:nth-child(2) { font-weight: 600; }
+@media (max-width: 48rem) {
+    .document-record-page .record-detail-panel { display: block; }
+    .document-record-page .record-detail-group + .record-detail-group { margin-top: var(--space-3); padding-top: var(--space-3); }
+    .document-record-page .record-detail-group dl { grid-template-columns: minmax(0, 1fr); }
+    .document-record-page .record-detail-heading__actions .record-status { flex-shrink: 0; }
+}
+@media (max-width: 36rem) {
+    .document-record-page .record-page-heading .record-detail-heading__actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--field-height);
+        gap: var(--space-2);
+    }
+    .document-record-page .record-detail-heading__actions > .record-status {
+        grid-column: 1 / -1;
+        justify-self: start;
+        margin: 0;
+    }
+    .document-record-page .record-detail-heading__actions .button { padding-inline: var(--space-2); }
+    .document-record-page .record-history-table { width: 100%; min-width: 0; }
+    .document-record-page .record-history-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+    .document-record-page .record-history-table tbody { display: grid; }
+    .document-record-page .record-history-table tbody tr {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .document-record-page .record-history-table tbody td {
+        display: grid;
+        align-content: start;
+        gap: var(--space-1);
+        padding: var(--space-2) var(--space-3);
+        border-bottom: 1px solid var(--surface-rule);
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .document-record-page .record-history-table tbody td::before {
+        content: attr(data-label);
+        color: var(--muted-ink);
+        font-size: var(--font-small);
+        font-weight: 500;
+        line-height: var(--leading-label);
+    }
+    .document-record-page .record-history-table tbody td:nth-child(3),
+    .document-record-page .record-history-table tbody td:nth-child(4) { grid-column: 1 / -1; }
+    .document-record-page .record-history-table tbody td:first-child { font-variant-numeric: tabular-nums; }
+    .document-record-page .record-history-table tbody tr:last-child td { border-bottom: 0; }
+}

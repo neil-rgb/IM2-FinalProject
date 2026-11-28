@@ -66,7 +66,7 @@ CREATE TABLE Documents (
   location_id      INT NOT NULL,
   recorded_by      INT NOT NULL,
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT chk_tracking  CHECK (tracking_number REGEXP '^DOC-[0-9]{4}-[0-9]{3}$'),
+  CONSTRAINT chk_tracking  CHECK (tracking_number REGEXP '^C[1-9]-[1-9][0-9]{2,}$'),
   CONSTRAINT chk_direction CHECK (direction IN ('Incoming','Outgoing')),
   CONSTRAINT chk_sender    CHECK (CHAR_LENGTH(TRIM(sender_recipient)) > 0),
   CONSTRAINT chk_status    CHECK (status IN ('Pending','In Process','Completed')),
@@ -75,6 +75,14 @@ CREATE TABLE Documents (
   FOREIGN KEY (location_id)  REFERENCES Storage_Locations(location_id),
   FOREIGN KEY (recorded_by)  REFERENCES Users(user_id)
 ) AUTO_INCREMENT=1001;
+
+-- A single, atomic sequence keeps displayed IDs short and unique across years.
+CREATE TABLE Document_Tracking_Counter (
+  counter_name VARCHAR(30) PRIMARY KEY,
+  last_value   BIGINT UNSIGNED NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+INSERT INTO Document_Tracking_Counter (counter_name, last_value) VALUES
+ ('cabinet-1',100),('cabinet-2',200),('cabinet-3',300),('cabinet-4',400),('cabinet-5',500);
 
 CREATE TABLE Document_Soft_Copies (
   document_id INT PRIMARY KEY,
@@ -222,7 +230,7 @@ END$$
 -- 3. STORED PROCEDURES
 -- ---------------------------------------------------------------------
 
--- 3a. Record a new document: generates DOC-YYYY-NNN, stores the paper's location.
+-- 3a. Record a new document: generates a cabinet-based permanent ID such as C1-101.
 CREATE PROCEDURE sp_add_document (
   IN p_user_id INT, IN p_title VARCHAR(150), IN p_type_id INT, IN p_committee_id INT,
   IN p_direction VARCHAR(20), IN p_sender_recipient VARCHAR(100), IN p_date_received DATE,
@@ -230,8 +238,10 @@ CREATE PROCEDURE sp_add_document (
 )
 BEGIN
   DECLARE v_status VARCHAR(10);
-  DECLARE v_next INT;
-  DECLARE v_prefix VARCHAR(10);
+  DECLARE v_sequence BIGINT UNSIGNED;
+  DECLARE v_cabinet VARCHAR(30);
+  DECLARE v_cabinet_number INT UNSIGNED;
+  DECLARE v_counter_name VARCHAR(30);
   DECLARE v_tracking VARCHAR(30);
 
   SELECT status INTO v_status FROM Users WHERE user_id = p_user_id;
@@ -252,10 +262,22 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Committee not found.';
   END IF;
 
-  SET v_prefix = CONCAT('DOC-', YEAR(p_date_received), '-');
-  SELECT COALESCE(MAX(CAST(SUBSTRING(tracking_number, 10) AS UNSIGNED)), 0) + 1
-    INTO v_next FROM Documents WHERE tracking_number LIKE CONCAT(v_prefix, '%');
-  SET v_tracking = CONCAT(v_prefix, LPAD(v_next, 3, '0'));
+  SELECT cabinet INTO v_cabinet
+  FROM Storage_Locations
+  WHERE location_id = p_location_id AND type_id = p_type_id;
+  SET v_cabinet_number = CAST(REPLACE(v_cabinet, 'Cabinet ', '') AS UNSIGNED);
+  IF v_cabinet_number < 1 OR v_cabinet_number > 9 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'The selected cabinet does not have a valid cabinet number.';
+  END IF;
+  SET v_counter_name = CONCAT('cabinet-', v_cabinet_number);
+  UPDATE Document_Tracking_Counter
+  SET last_value = LAST_INSERT_ID(last_value + 1)
+  WHERE counter_name = v_counter_name;
+  IF ROW_COUNT() <> 1 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'The document ID sequence is unavailable.';
+  END IF;
+  SET v_sequence = LAST_INSERT_ID();
+  SET v_tracking = CONCAT('C', v_cabinet_number, '-', LPAD(v_sequence, 3, '0'));
 
   INSERT INTO Documents (tracking_number, title, type_id, committee_id, direction,
                          sender_recipient, date_received, status, location_id, recorded_by)
@@ -383,27 +405,75 @@ INSERT INTO Storage_Locations (location_id, type_id, cabinet, drawer, folder) VA
  (510,404,'Cabinet 04','Drawer 1','Folder 001'),(511,404,'Cabinet 04','Drawer 1','Folder 002'),(512,404,'Cabinet 04','Drawer 2','Folder 001'),
  (513,405,'Cabinet 05','Drawer 1','Folder 001'),(514,405,'Cabinet 05','Drawer 1','Folder 002'),(515,405,'Cabinet 05','Drawer 2','Folder 001');
 
--- Documents inserted directly (the AFTER INSERT trigger writes the first history rows)
+-- Fictional demonstration records based on document types in official sources.
+-- Names, titles, reference numbers and dates are illustrative B-TRACK data.
+-- These are metadata examples, not copies of actual San Roque records.
+-- Sources checked on 2026-11-28
+-- DILG Bulacan templates (resolutions, notices, minutes, attendance, GAD and waste reports)
+-- https://www.lgrcbulacan.region3.dilg.gov.ph/e-library/audit-templates/for-barangay
+-- DILG financial disclosure document types
+-- https://calabarzon.dilg.gov.ph/dilg-over-38k-barangays-compliant-with-full-disclosure-policy/
+-- DBM Barangay Budgeting Manual, 2026 edition (Quarterly Report of Receipts)
+-- https://www.dbm.gov.ph/wp-content/uploads/Issuances/2026/Local-Budget-Circular/LOCAL-BUDGET-CIRCULAR-NO-170-BARANGAY%20BUDGETING%20MANUAL%2C%202026%20EDITION.pdf
+-- Hindang Citizen's Charter (budget transmittal and supporting documents)
+-- https://hindang.gov.ph/index.php/internal-services/
+-- Ormoc Citizen's Charter (streetlight request letters and barangay resolutions)
+-- https://ormoc.gov.ph/assets/docs/citizens_charter/City%20General%20Services%20Office%20-%20Citizens%20Charter.pdf
+--
+-- Incoming identifies the sender; Outgoing identifies the recipient.
+-- The secretary records every document, including reports prepared by other officials.
+-- created_at and history action_date use the import time, when these samples are recorded.
+-- The AFTER INSERT trigger writes the initial Pending and storage history entries.
 INSERT INTO Documents (document_id, tracking_number, title, type_id, committee_id, direction, sender_recipient, date_received, status, location_id, recorded_by) VALUES
- (1001,'DOC-2026-001','Request for Barangay Clearance - J. Ramos', 403, NULL, 'Incoming','Juan Ramos',            '2026-11-03','Pending', 507, 301),
- (1002,'DOC-2026-002','Endorsement of Scholarship Applicants',     403, NULL, 'Outgoing','Municipal Mayor Office','2026-11-04','Pending', 508, 301),
- (1003,'DOC-2026-003','Notice of Barangay Assembly',               404, 202,  'Outgoing','All Residents',        '2026-11-05','Pending', 510, 301),
- (1004,'DOC-2026-004','October 2026 Collections Report',           401, 201,  'Outgoing','Municipal Treasurer',  '2026-11-05','Pending', 501, 302),
- (1005,'DOC-2026-005','Resolution on Drainage Improvement',        402, 204,  'Incoming','Sangguniang Barangay', '2026-11-10','Pending', 505, 301),
- (1006,'DOC-2026-006','Request for Medical Mission Support',       403, 203,  'Incoming','Rural Health Unit',    '2026-11-10','Pending', 509, 301),
- (1007,'DOC-2026-007','Q3 2026 Statement of Expenditures',         401, 201,  'Outgoing','COA Municipal Office', '2026-11-12','Pending', 503, 302),
- (1008,'DOC-2026-008','Barangay Employee Records Update',          405, NULL, 'Incoming','Municipal HR',         '2026-11-17','Pending', 515, 301);
+ (1001,'C3-301','Request Letter for Drainage Clearing in Purok 2',403,204,'Incoming','Purok 2 Residents','2026-11-03','Pending',507,301),
+ (1002,'C3-302','Endorsement Letter for Purok 3 Streetlight Repair',403,204,'Outgoing','Municipal Engineering Office','2026-11-04','Pending',508,301),
+ (1003,'C4-401','Notice of Barangay Solid Waste Management Committee Meeting - November 2026',404,203,'Outgoing','Barangay Solid Waste Management Committee','2026-11-05','Pending',510,301),
+ (1004,'C1-101','Itemized Monthly Collections and Disbursements - October 2026',401,201,'Outgoing','Municipal Accounting Office','2026-11-05','Pending',501,301),
+ (1005,'C2-201','Resolution No. 018, s. 2026 - Requesting Funds for Drainage Rehabilitation',402,204,'Outgoing','Office of the Municipal Mayor','2026-11-10','Pending',505,301),
+ (1006,'C3-303','Request Letter for Community Health Outreach Assistance',403,203,'Outgoing','Municipal Health Office','2026-11-10','Pending',509,301),
+ (1007,'C1-102','Quarterly Report of Receipts - Third Quarter 2026',401,201,'Outgoing','Municipal Accounting Office','2026-11-12','Pending',503,301),
+ (1008,'C5-501','Minutes and Attendance Sheet - Regular Sangguniang Barangay Session, November 16, 2026',405,NULL,'Incoming','Office of the Sangguniang Barangay','2026-11-17','Pending',513,301),
+ (1009,'C3-304','Proposed Barangay Annual Budget - FY 2027',401,201,'Outgoing','Municipal Budget Office','2026-11-18','Pending',502,301),
+ (1010,'C5-502','Annual Procurement Plan - FY 2027',401,201,'Outgoing','Municipal Budget Office','2026-11-18','Pending',502,301),
+ (1011,'C3-305','Resolution No. 019, s. 2026 - Approving the Solid Waste Management Action Plan',402,203,'Outgoing','Municipal Environment and Natural Resources Office','2026-11-19','Pending',504,301),
+ (1012,'C3-306','Resolution No. 020, s. 2026 - Supporting Barangay Road Clearing Operations',402,204,'Outgoing','Office of the Municipal Mayor','2026-11-19','Pending',506,301),
+ (1013,'C4-402','Resolution No. 021, s. 2026 - Adopting the Barangay GAD Plan and Budget for FY 2027',402,NULL,'Outgoing','Municipal GAD Focal Point System','2026-11-20','Pending',505,301),
+ (1014,'C1-103','Request Letter for Use of the Barangay Covered Court',403,NULL,'Incoming','Purok 1 Youth Organization','2026-11-20','Pending',507,301),
+ (1015,'C2-202','Invitation to Municipal Disaster Preparedness Coordination Meeting',404,NULL,'Incoming','Municipal Disaster Risk Reduction and Management Office','2026-11-23','Pending',511,301),
+ (1016,'C3-307','Notice of Barangay Council for the Protection of Children Meeting',404,NULL,'Outgoing','Barangay Council for the Protection of Children Members','2026-11-23','Pending',510,301),
+ (1017,'C1-104','Transmittal Letter for the Proposed Barangay Annual Budget - FY 2027',404,201,'Outgoing','Office of the Sangguniang Bayan','2026-11-24','Pending',512,301),
+ (1018,'C5-503','Minutes and Attendance Sheet - Barangay Solid Waste Management Committee Meeting',405,203,'Incoming','Barangay Solid Waste Management Committee Secretariat','2026-11-24','Pending',514,301),
+ (1019,'C1-105','Barangay GAD Accomplishment Report - Third Quarter 2026',405,NULL,'Outgoing','Municipal GAD Focal Point System','2026-11-25','Pending',515,301),
+ (1020,'C1-106','Barangay Solid Waste Management Accomplishment Report - October 2026',405,203,'Outgoing','Municipal Environment and Natural Resources Office','2026-11-25','Pending',514,301);
 
--- Status/location changes go through the stored procedures (validated + logged by trigger)
--- Arguments: document_id, new_status | new_location_id, user_id, remarks
-CALL sp_update_document_status(1001, 'In Process', 301, 'Received and under review');
-CALL sp_update_document_status(1001, 'Completed',  302, 'Approved and signed; copy filed');
-CALL sp_update_document_status(1002, 'In Process', 301, 'Endorsement being prepared');
-CALL sp_update_document_status(1003, 'In Process', 302, 'For posting');
-CALL sp_update_document_status(1003, 'Completed',  302, 'Notice posted and released');
-CALL sp_update_document_status(1004, 'In Process', 302, 'Waiting for Captain signature');
-CALL sp_update_document_status(1005, 'In Process', 301, 'For committee review');
-CALL sp_move_document(1002, 509, 301, 'Refiled to Cabinet 03, Drawer 2');
+UPDATE Document_Tracking_Counter
+JOIN (
+  SELECT CONCAT('cabinet-', SUBSTRING(SUBSTRING_INDEX(tracking_number, '-', 1), 2)) AS counter_name,
+         MAX(CAST(SUBSTRING_INDEX(tracking_number, '-', -1) AS UNSIGNED)) AS last_value
+  FROM Documents
+  GROUP BY SUBSTRING_INDEX(tracking_number, '-', 1)
+) ids ON ids.counter_name = Document_Tracking_Counter.counter_name
+SET Document_Tracking_Counter.last_value = GREATEST(Document_Tracking_Counter.last_value, ids.last_value);
+
+-- Processing outcomes are recorded by the secretary through the existing procedures.
+CALL sp_update_document_status(1001, 'In Process', 301, 'Request referred for inspection and preparation of an endorsement.');
+CALL sp_update_document_status(1001, 'Completed', 301, 'Endorsement transmitted to the Municipal Engineering Office; receiving copy filed.');
+CALL sp_update_document_status(1002, 'In Process', 301, 'Preparing the endorsement and checking the reported streetlight locations.');
+CALL sp_update_document_status(1003, 'In Process', 301, 'Preparing meeting notices for distribution.');
+CALL sp_update_document_status(1003, 'Completed', 301, 'Signed meeting notices distributed; office copy filed.');
+CALL sp_update_document_status(1004, 'In Process', 301, 'Awaiting the signed report from the barangay treasurer for transmittal.');
+CALL sp_update_document_status(1005, 'In Process', 301, 'Preparing the certified resolution and transmittal copy.');
+CALL sp_update_document_status(1007, 'In Process', 301, 'Checking the signed report and supporting attachments.');
+CALL sp_update_document_status(1007, 'Completed', 301, 'Report transmitted to the Municipal Accounting Office; acknowledged copy filed.');
+CALL sp_update_document_status(1008, 'In Process', 301, 'Checking the minutes and attendance sheet for signatures.');
+CALL sp_update_document_status(1008, 'Completed', 301, 'Signed minutes and attendance sheet filed in the session records folder.');
+CALL sp_update_document_status(1011, 'In Process', 301, 'Checking the certified resolution and approved action plan before release.');
+CALL sp_update_document_status(1014, 'In Process', 301, 'Verifying venue availability before referring the request for approval.');
+CALL sp_update_document_status(1015, 'In Process', 301, 'Invitation received and forwarded to the Punong Barangay for scheduling.');
+CALL sp_update_document_status(1015, 'Completed', 301, 'Attendance confirmation sent; invitation and reply filed.');
+CALL sp_update_document_status(1018, 'In Process', 301, 'Collecting committee signatures for the minutes and attendance sheet.');
+CALL sp_update_document_status(1018, 'Completed', 301, 'Signed committee meeting records filed.');
+CALL sp_move_document(1002, 509, 301, 'Endorsement filed in Cabinet 03, Drawer 2, Folder 001.');
 
 -- =====================================================================
 -- 6. FIVE SQL QUERIES  (screenshot each statement + output)
@@ -464,9 +534,9 @@ SELECT tracking_number, title, status, storage_location, days_open
 FROM vw_document_tracking WHERE status <> 'Completed' ORDER BY days_open DESC;
 
 -- STORED PROCEDURES: record a document, update its status, move its paper copy
-CALL sp_add_document(301, 'Request for Street Lighting', 403, 204, 'Incoming', 'Purok 3 Residents', '2026-11-18', 502);
-CALL sp_update_document_status(1009, 'In Process', 301, 'Forwarded to Infrastructure committee');
-CALL sp_move_document(1006, 504, 301, 'Refiled to Cabinet B, Drawer 1');
+CALL sp_add_document(301, 'Request Letter for Repair of Streetlights in Purok 4', 403, 204, 'Incoming', 'Purok 4 Residents', '2026-11-26', 507);
+CALL sp_update_document_status(1021, 'In Process', 301, 'Request referred to the Infrastructure Committee for inspection.');
+CALL sp_move_document(1006, 508, 301, 'Health outreach request filed in Cabinet 03, Drawer 1, Folder 002.');
 
 -- TRIGGER: processing history was written automatically (status AND location changes)
 SELECT h.history_id, d.tracking_number, h.action_type,
@@ -479,7 +549,7 @@ JOIN Documents d ON d.document_id = h.document_id
 JOIN Users u     ON u.user_id = h.handled_by
 LEFT JOIN Storage_Locations ol ON ol.location_id = h.old_location_id
 LEFT JOIN Storage_Locations nl ON nl.location_id = h.new_location_id
-WHERE d.document_id IN (1001, 1002, 1009)
+WHERE d.document_id IN (1001, 1002, 1021)
 ORDER BY h.document_id, h.history_id;
 
 -- BUSINESS RULE TESTS (each of these should return an error)
@@ -487,7 +557,7 @@ ORDER BY h.document_id, h.history_id;
 -- CALL sp_update_document_status(1001, 'Pending', 301, 'test');    -- Completed cannot go back
 -- CALL sp_update_document_status(1006, 'In Process', 303, 'test'); -- Inactive account
 -- CALL sp_add_document(301, 'x', 401, NULL, 'Incoming', 'x', '2099-01-01', 501); -- future date
--- UPDATE Documents SET tracking_number = 'DOC-2026-999' WHERE document_id = 1001; -- permanent
+-- UPDATE Documents SET tracking_number = 'C1-999' WHERE document_id = 1001; -- permanent
 -- DELETE FROM Documents WHERE document_id = 1006;                  -- documents are never deleted
 -- DELETE FROM Users WHERE user_id = 301;                           -- user has records
 -- UPDATE Processing_History SET remarks = 'x' WHERE history_id = 5001;  -- history is locked

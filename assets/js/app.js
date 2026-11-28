@@ -578,7 +578,7 @@
         }
 
         const form = dialog.querySelector('form');
-        const cancel = dialog.querySelector('[data-record-dialog-cancel]');
+        const cancelControls = dialog.querySelectorAll('[data-record-dialog-cancel]');
         const submitButton = form.querySelector('button[type="submit"]');
         const submitLabel = submitButton.textContent;
         let saving = false;
@@ -587,7 +587,7 @@
             saving = state;
             submitButton.disabled = state;
             submitButton.textContent = state ? 'Saving…' : submitLabel;
-            cancel.setAttribute('aria-disabled', String(state));
+            cancelControls.forEach(control => control.setAttribute('aria-disabled', String(state)));
         };
 
         const openDialog = () => {
@@ -604,12 +604,12 @@
             openDialog();
         });
 
-        cancel.addEventListener('click', (event) => {
+        cancelControls.forEach(control => control.addEventListener('click', (event) => {
             event.preventDefault();
             if (!saving) {
                 dialog.close();
             }
-        });
+        }));
 
         dialog.addEventListener('cancel', (event) => {
             if (saving) {

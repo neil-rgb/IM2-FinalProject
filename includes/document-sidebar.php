@@ -75,6 +75,10 @@ $activeUser = current_user();
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 10h1M14 10h1M9 14h1M14 14h1M11 21v-4h2v4"></path></svg>
                 <span>Barangay info</span>
             </a>
+            <a class="nav-link<?= ($recycleBinActive ?? false) ? ' is-active' : '' ?>" href="recycle-bin.php"<?= ($recycleBinActive ?? false) ? ' aria-current="page"' : '' ?>>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"></path></svg>
+                <span>Recycle Bin</span>
+            </a>
         </nav>
     </div>
 
@@ -83,11 +87,6 @@ $activeUser = current_user();
             <span>SECRETARY</span>
             <strong title="<?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?>"><?= e($activeUser['full_name'] ?? 'Barangay Secretary') ?></strong>
         </div>
-
-        <a class="nav-link sidebar-recycle-link<?= ($recycleBinActive ?? false) ? ' is-active' : '' ?>" href="recycle-bin.php"<?= ($recycleBinActive ?? false) ? ' aria-current="page"' : '' ?>>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"></path></svg>
-            <span>Recycle Bin</span>
-        </a>
 
         <form class="sign-out" action="../logout.php" method="post">
             <?= csrf_field() ?>

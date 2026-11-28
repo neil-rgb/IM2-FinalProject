@@ -233,7 +233,7 @@ svg {
     display: none;
 }
 
-.sidebar.is-editing-profile :is(.primary-nav, .sidebar-recycle-link) {
+.sidebar.is-editing-profile .primary-nav {
     display: none;
 }
 
@@ -442,6 +442,9 @@ svg {
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem 1rem;
+    min-height: calc(var(--button-height) + 0.75rem + 1px);
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--surface-rule);
 }
 
 .records-header .page-breadcrumb {
@@ -1921,7 +1924,7 @@ body.modal-open {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 0.75rem;
+    gap: 0.625rem 1.25rem;
     color: var(--muted-ink);
     font-size: var(--font-small);
     font-variant-numeric: tabular-nums;
@@ -1929,6 +1932,48 @@ body.modal-open {
 
 .record-detail-code {
     font-weight: 600;
+}
+
+.record-page-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    padding-block: 0.875rem;
+}
+.record-page-heading .record-detail-title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.record-page-heading .record-detail-meta {
+    width: 100%;
+    display: flex;
+    gap: 0.5rem 1.25rem;
+    align-items: center;
+}
+.record-page-heading .record-detail-meta > .record-status {
+    margin-left: auto;
+}
+.record-page-heading .record-detail-meta > span:not(.record-status) {
+    white-space: nowrap;
+}
+.record-page-heading .record-detail-title h1 {
+    margin: 0;
+    font-size: var(--font-emphasis);
+    line-height: 1.45;
+}
+.record-page-heading .record-detail-heading__actions {
+    justify-content: flex-end;
+    width: 100%;
+    gap: 0.5rem;
+}
+@media (max-width: 36rem) {
+    .record-page-heading .record-detail-meta > span:not(.record-status) {
+        white-space: normal;
+    }
+    .record-page-heading .record-detail-heading__actions {
+        flex-wrap: wrap;
+    }
 }
 
 .record-detail-title h1 {
@@ -1943,6 +1988,52 @@ body.modal-open {
     margin: 0 0 0.5rem;
     color: var(--muted-ink);
     font-size: var(--font-small);
+}
+
+/* Record reading order: title, identifying details, then the action toolbar. */
+.document-record-page .record-page-heading {
+    gap: 1rem;
+    padding-block: 1rem;
+}
+.document-record-page .record-page-heading .record-detail-title {
+    gap: 0.5rem;
+}
+.document-record-page .record-page-heading .record-detail-title h1 {
+    font-size: var(--font-title);
+    font-weight: 600;
+    line-height: 1.35;
+    max-width: 65ch;
+    text-wrap: pretty;
+}
+.document-record-page .record-detail-meta {
+    column-gap: 1.5rem;
+    row-gap: 0.375rem;
+    line-height: 1.5;
+}
+.document-record-page .record-page-heading .record-detail-heading__actions {
+    justify-content: flex-end;
+    align-items: center;
+    padding-top: 0.75rem;
+    border-top: 0;
+    gap: 0.5rem;
+}
+.document-record-page .record-detail-heading__actions > .record-status {
+    margin-right: auto;
+    font-size: var(--font-small);
+}
+.document-record-page .record-detail-heading__actions > .button {
+    min-height: 2.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: var(--font-body);
+}
+.document-record-page .record-detail-group dl {
+    gap: 0.75rem;
+}
+@media (min-width: 64rem) {
+    .document-record-page .record-detail-group dl {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+    }
 }
 
 .record-status {
@@ -2013,6 +2104,97 @@ body.modal-open {
     gap: 1rem;
     padding: 1rem 1.125rem;
 }
+
+/* Shared popup geometry for React forms and PHP confirmation dialogs. */
+.records-workspace .popup-panel {
+    width: min(32rem, calc(100% - 2rem));
+    max-height: calc(100dvh - 2rem);
+    margin: auto;
+    padding: 0;
+    overflow: auto;
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--surface-rule);
+    border-radius: var(--panel-radius);
+    box-shadow: none;
+}
+.records-workspace .popup-panel.popup-panel--form {
+    width: min(38rem, calc(100% - 2rem));
+}
+.records-workspace .popup-panel::backdrop {
+    background: rgb(23 24 45 / 25%);
+}
+.records-workspace .popup-panel .document-modal__header {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+    align-items: flex-start;
+    background: var(--paper);
+    border-bottom: 1px solid var(--surface-rule);
+}
+.records-workspace .popup-panel .document-modal__header h2 {
+    margin: 0;
+    padding-block: 0.5rem;
+    font-size: var(--font-emphasis);
+    font-weight: 600;
+    line-height: 1.4;
+}
+.records-workspace .popup-panel .document-modal__header p {
+    margin: 0 0 0.25rem;
+    font-size: var(--font-body);
+    line-height: 1.5;
+    color: var(--muted-ink);
+}
+.records-workspace .popup-panel .popup-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 2.5rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    min-height: 2.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius);
+    color: var(--muted-ink);
+    background: transparent;
+    text-decoration: none;
+    cursor: pointer;
+}
+.records-workspace .popup-panel .popup-close svg { width: 1.25rem; height: 1.25rem; }
+.records-workspace .popup-panel .popup-close:hover { color: var(--ink); background: var(--control-fill); }
+.records-workspace .popup-panel :is(.react-form, .record-status-form) {
+    margin: 0;
+    padding: 0.875rem 1rem;
+    gap: 0.75rem;
+    font-size: var(--font-body);
+}
+.records-workspace .popup-panel .form-actions {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    gap: 0.5rem;
+    border-color: var(--surface-rule);
+}
+.records-workspace .popup-panel .form-actions .button {
+    min-height: 2.5rem;
+    padding: 0.375rem 0.75rem;
+    font-size: var(--font-body);
+    line-height: 1.4;
+    text-align: center;
+}
+.records-workspace .popup-panel .form-actions .button--secondary {
+    color: var(--ink);
+    background: transparent;
+    border-color: var(--rule);
+}
+.records-workspace .popup-panel .form-actions .button--secondary:hover { background: var(--control-fill); }
+.records-workspace .popup-panel .record-status-form:not(:has(.modal-field)) .form-actions {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+.records-workspace .popup-panel :is(textarea, input, select) { font-size: var(--font-body); }
+.records-workspace .popup-panel :is(.popup-close, .button):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .record-status-transition {
     display: flex;
@@ -2411,7 +2593,16 @@ html {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
+    scrollbar-width: none;
+}
+
+.records-workspace :is(.sidebar, .sidebar-content)::-webkit-scrollbar {
+    display: none;
+    width: 0;
+}
+
+.records-workspace .sidebar {
+    scrollbar-width: none;
 }
 
 .sidebar-footer {
@@ -2506,6 +2697,17 @@ html {
     grid-template-columns: 1.25rem minmax(0, 1fr);
     color: var(--muted-ink);
     border-radius: var(--control-radius);
+}
+
+.records-workspace button.nav-link {
+    width: 100%;
+    appearance: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 
 .records-workspace .nav-link:hover,
@@ -2899,6 +3101,10 @@ html {
 :is(.modal-document-form, .record-status-dialog)::-webkit-scrollbar {
     display: block;
     width: 0.5rem;
+}
+
+.records-workspace .record-table tbody :is(td, .record-title) {
+    font-size: var(--font-small);
 }
 
 .records-workspace .record-table td:nth-child(4) {

@@ -11,7 +11,7 @@
             $hasMatchingFolders = $hasMatchingFolders || $matchesType;
             $selectedFolder = $matchesType && $formValues['location_id'] === (string) $location['location_id'];
             ?>
-            <option value="<?= e($location['location_id']) ?>" data-type-id="<?= e($locationTypeId) ?>"<?= $selectedFolder ? ' selected' : '' ?>><?= e($location['cabinet']) ?> / <?= e($location['drawer']) ?> / <?= e($location['folder']) ?></option>
+            <option value="<?= e($location['location_id']) ?>" data-type-id="<?= e($locationTypeId) ?>"<?= $selectedFolder ? ' selected' : '' ?>><?= e(storage_location_code($location['cabinet'], $location['drawer'], $location['folder'])) ?></option>
         <?php endforeach; ?>
     </select>
     <small id="<?= e($folderFieldId) ?>-hint" class="modal-field__hint" data-location-hint aria-live="polite"><?php if ($hasMatchingFolders): ?>Folders are filtered by document category.<?php elseif ($folderTypeId === ''): ?>Choose a document category first.<?php else: ?>No folders are configured for this category.<?php endif; ?></small>

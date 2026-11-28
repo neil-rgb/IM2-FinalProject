@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 
 require_guest();
+require __DIR__ . '/includes/react-shell.php';
 
 $registrationError = '';
 
@@ -45,6 +46,12 @@ if (is_post_request()) {
     }
 }
 
+if (($_SERVER['HTTP_X_BTRACK_REACT'] ?? '') === '1' && is_post_request()) {
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(['ok' => false, 'message' => $registrationError]);
+    exit;
+}
+
 $noticeKey = isset($_GET['notice']) && is_string($_GET['notice']) ? $_GET['notice'] : '';
 $notices = [
     'duplicate' => [
@@ -77,7 +84,9 @@ $notice = $notices[$noticeKey] ?? null;
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/theme.css">
+    <script src="assets/js/page-transition.js" defer blocking="render"></script>
     <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/ui-system.css">
 </head>
 <body>
     <main class="login-shell">

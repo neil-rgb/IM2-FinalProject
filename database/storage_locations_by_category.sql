@@ -66,6 +66,22 @@ SET d.location_id = new_location.location_id
 WHERE old_location.type_id IS NULL;
 SET @action_remarks = NULL;
 
+CREATE TABLE IF NOT EXISTS Document_Tracking_Counter (
+  counter_name VARCHAR(30) PRIMARY KEY,
+  last_value   BIGINT UNSIGNED NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+INSERT IGNORE INTO Document_Tracking_Counter (counter_name, last_value) VALUES
+ ('cabinet-1',100),('cabinet-2',200),('cabinet-3',300),('cabinet-4',400),('cabinet-5',500);
+UPDATE Document_Tracking_Counter counters
+JOIN (
+  SELECT CONCAT('cabinet-', SUBSTRING(SUBSTRING_INDEX(tracking_number, '-', 1), 2)) AS counter_name,
+         MAX(CAST(SUBSTRING_INDEX(tracking_number, '-', -1) AS UNSIGNED)) AS last_value
+  FROM Documents
+  WHERE tracking_number REGEXP '^C[1-9]-[1-9][0-9]{2,}$'
+  GROUP BY SUBSTRING_INDEX(tracking_number, '-', 1)
+) ids ON ids.counter_name = counters.counter_name
+SET counters.last_value = GREATEST(counters.last_value, ids.last_value);
+
 DROP PROCEDURE IF EXISTS sp_add_document;
 DROP PROCEDURE IF EXISTS sp_move_document;
 DELIMITER $$
@@ -77,8 +93,10 @@ CREATE PROCEDURE sp_add_document (
 )
 BEGIN
   DECLARE v_status VARCHAR(10);
-  DECLARE v_next INT;
-  DECLARE v_prefix VARCHAR(10);
+  DECLARE v_sequence BIGINT UNSIGNED;
+  DECLARE v_cabinet VARCHAR(30);
+  DECLARE v_cabinet_number INT UNSIGNED;
+  DECLARE v_counter_name VARCHAR(30);
   DECLARE v_tracking VARCHAR(30);
 
   SELECT status INTO v_status FROM Users WHERE user_id = p_user_id;
@@ -99,10 +117,22 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Committee not found.';
   END IF;
 
-  SET v_prefix = CONCAT('DOC-', YEAR(p_date_received), '-');
-  SELECT COALESCE(MAX(CAST(SUBSTRING(tracking_number, 10) AS UNSIGNED)), 0) + 1
-    INTO v_next FROM Documents WHERE tracking_number LIKE CONCAT(v_prefix, '%');
-  SET v_tracking = CONCAT(v_prefix, LPAD(v_next, 3, '0'));
+  SELECT cabinet INTO v_cabinet
+  FROM Storage_Locations
+  WHERE location_id = p_location_id AND type_id = p_type_id;
+  SET v_cabinet_number = CAST(REPLACE(v_cabinet, 'Cabinet ', '') AS UNSIGNED);
+  IF v_cabinet_number < 1 OR v_cabinet_number > 9 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'The selected cabinet does not have a valid cabinet number.';
+  END IF;
+  SET v_counter_name = CONCAT('cabinet-', v_cabinet_number);
+  UPDATE Document_Tracking_Counter
+  SET last_value = LAST_INSERT_ID(last_value + 1)
+  WHERE counter_name = v_counter_name;
+  IF ROW_COUNT() <> 1 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'The document ID sequence is unavailable.';
+  END IF;
+  SET v_sequence = LAST_INSERT_ID();
+  SET v_tracking = CONCAT('C', v_cabinet_number, '-', LPAD(v_sequence, 3, '0'));
 
   INSERT INTO Documents (tracking_number, title, type_id, committee_id, direction,
                          sender_recipient, date_received, status, location_id, recorded_by)

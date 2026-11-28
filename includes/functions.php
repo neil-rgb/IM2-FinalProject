@@ -10,6 +10,20 @@ function e($value): string
 /** Redirect to another local page and stop the current request. */
 function redirect(string $location, int $status = 302): void
 {
+    if (($_SERVER['HTTP_X_BTRACK_REACT'] ?? '') === '1') {
+        $notice = pull_flash();
+        $draft = $_SESSION['_document_edit_draft'] ?? $_SESSION['_document_status_draft'] ?? null;
+        unset($_SESSION['_document_edit_draft'], $_SESSION['_document_status_draft']);
+        header('Content-Type: application/json; charset=UTF-8');
+        header('Cache-Control: no-store');
+        echo json_encode([
+            'ok' => ($notice['type'] ?? '') !== 'error' && $draft === null,
+            'redirect' => $location,
+            'notice' => $notice,
+            'errors' => $draft['errors'] ?? (isset($draft['message']) ? ['_form' => $draft['message']] : [])
+        ]);
+        exit;
+    }
     if (preg_match('/[\r\n]/', $location) === 1) {
         throw new InvalidArgumentException('Invalid redirect location.');
     }
@@ -134,12 +148,26 @@ function verify_csrf_token(?string $token): bool
         && hash_equals($sessionToken, $token);
 }
 
-/** Create the human-readable B-TRACK tracking number. */
-function tracking_number(int $sequence, ?int $year = null): string
+/** Create the stable document ID from its intake cabinet and sequence. */
+function tracking_number(int $cabinet, int $sequence): string
 {
-    $recordYear = $year ?? (int) date('Y');
+    return sprintf('C%d-%03d', max(1, $cabinet), max(0, $sequence));
+}
 
-    return sprintf('BT-%04d-%04d', $recordYear, max(0, $sequence));
+/** Show an exact storage location in a compact, unambiguous form. */
+function storage_location_code(string $cabinet, string $drawer, string $folder): string
+{
+    $part = static function (string $label, string $prefix, int $width = 1): string {
+        if (preg_match('/(\d+)/', $label, $matches) === 1) {
+            $number = (string) (int) $matches[1];
+            return $prefix . ($width > 1 ? str_pad($number, $width, '0', STR_PAD_LEFT) : $number);
+        }
+
+        $suffix = strtoupper(preg_replace('/[^a-z0-9]+/i', '', preg_replace('/^(cabinet|drawer|folder)\s*/i', '', $label) ?? '') ?? '');
+        return $prefix . ($suffix !== '' ? $suffix : '0');
+    };
+
+    return $part($cabinet, 'C') . '-' . $part($drawer, 'D') . '-' . $part($folder, 'F', 2);
 }
 
 /** Convert a status label into a safe CSS modifier. */
@@ -175,6 +203,7 @@ function fetch_documents(): array
 {
     $sql = <<<'SQL'
         SELECT d.document_id AS id,
+               d.location_id,
                d.tracking_number AS tracking,
                d.title,
                t.type_name AS category,
